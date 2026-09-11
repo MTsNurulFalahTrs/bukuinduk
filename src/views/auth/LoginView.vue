@@ -130,6 +130,10 @@ async function handleLogin() {
     }
   } catch (err: unknown) {
     errorMsg.value = err instanceof Error ? err.message : 'Login gagal. Coba lagi.'
+    // BUG-65 FIX: Bersihkan field password setelah login gagal agar credential
+    // tidak tertinggal di memori / form lebih lama dari yang diperlukan.
+    // Username dibiarkan terisi agar user tidak perlu mengetik ulang.
+    form.password = ''
   } finally {
     isLoading.value = false
   }
