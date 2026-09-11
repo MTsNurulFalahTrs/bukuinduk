@@ -9,7 +9,10 @@ export function setupGuards(router: Router): void {
   router.beforeEach(async (to, _from) => {
     const authStore = useAuthStore()
 
-    // Inisialisasi state dari localStorage pada navigasi pertama
+    // BUG-11 FIX: initFromStorage() sekarang memiliki internal flag _initialized
+    // sehingga hanya efektif berjalan sekali meskipun dipanggil tiap navigasi.
+    // Ini memastikan state diinisialisasi dari localStorage pada navigasi pertama
+    // tanpa overhead membaca localStorage & meresetting reactive state setiap kali.
     authStore.initFromStorage()
 
     const isAuthenticated = authStore.isAuthenticated
@@ -57,6 +60,8 @@ export function setupGuards(router: Router): void {
     if (title) document.title = `${title} — Buku Induk Digital`
 
     // Fetch master data hanya jika sudah login
+    // Store schoolYear & settings sudah memiliki guard `initialized` internal
+    // sehingga fetch() berikutnya tidak akan re-request ke GAS jika sudah ada data.
     const authStore = useAuthStore()
     if (authStore.isAuthenticated) {
       const schoolYearStore = useSchoolYearStore()
