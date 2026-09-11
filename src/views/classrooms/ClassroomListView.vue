@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Plus, School, Users, GraduationCap, Pencil, Trash2 } from 'lucide-vue-next'
 import { PageHeader } from '@/components/shared'
 import { BaseButton, BaseSelect, BaseBadge, BaseSkeleton, BaseEmpty, BaseConfirmDialog } from '@/components/ui'
@@ -110,7 +110,16 @@ const confirm = useConfirm()
 
 const classrooms = ref<Classroom[]>([])
 const isLoading = ref(true)
-const selectedSchoolYearId = ref(schoolYearStore.activeSchoolYear?.id ?? '')
+
+// BUG-61 FIX: Gunakan computed agar selectedSchoolYearId reaktif terhadap
+// perubahan activeSchoolYear. Sebelumnya ref() hanya di-set sekali saat
+// komponen mount, tidak berubah jika admin mengubah tahun aktif.
+const selectedSchoolYearId = computed({
+  get: () => _selectedId.value || schoolYearStore.activeSchoolYear?.id || '',
+  set: (v: string) => { _selectedId.value = v },
+})
+const _selectedId = ref('')
+
 let deleteTargetId = ''
 
 async function loadClassrooms() {
@@ -120,6 +129,12 @@ async function loadClassrooms() {
   } catch { toast.error('Gagal memuat data kelas.') }
   finally { isLoading.value = false }
 }
+
+// BUG-61 FIX: Watch selectedSchoolYearId agar reload otomatis saat tahun pelajaran
+// aktif berubah (misalnya admin mengubah di tab Settings).
+watch(selectedSchoolYearId, () => {
+  loadClassrooms()
+})
 
 function handleDelete(id: string, name: string) {
   deleteTargetId = id
@@ -142,7 +157,7 @@ async function confirmDelete() {
 
 onMounted(async () => {
   await schoolYearStore.fetch()
-  selectedSchoolYearId.value = schoolYearStore.activeSchoolYear?.id ?? ''
+  // selectedSchoolYearId computed sudah mengambil activeSchoolYear dari store
   await loadClassrooms()
 })
 </script>
