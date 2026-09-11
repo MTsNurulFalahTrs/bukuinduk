@@ -55,8 +55,16 @@ export const useSchoolYearStore = defineStore('schoolYear', () => {
 
   function updateSchoolYear(updated: SchoolYear) {
     const idx = schoolYears.value.findIndex(s => s.id === updated.id)
-    if (idx !== -1) schoolYears.value[idx] = updated
-    // Jika set active, reset semua lainnya
+
+    // BUG-08 FIX: Jika id tidak ditemukan di list (misalnya data belum di-fetch),
+    // tambahkan sebagai item baru daripada silent fail.
+    if (idx !== -1) {
+      schoolYears.value[idx] = updated
+    } else {
+      schoolYears.value.push(updated)
+    }
+
+    // Jika tahun ini di-set aktif, nonaktifkan semua yang lain
     if (updated.isActive) {
       schoolYears.value = schoolYears.value.map(s =>
         s.id === updated.id ? s : { ...s, isActive: false }
