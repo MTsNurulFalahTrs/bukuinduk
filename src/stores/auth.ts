@@ -5,12 +5,16 @@ import type { Permission } from '@/constants'
 import { ROLE_PERMISSIONS } from '@/constants'
 import { authService } from '@/services'
 import { setUnauthorizedHandler } from '@/services'
-import { getToken, setToken, setStoredUser, getStoredUser, clearAuth, getUserFromToken, isTokenExpired } from '@/utils'
+import { getToken, setToken, setStoredUser, getStoredUser, clearAuth, isTokenExpired } from '@/utils'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(getStoredUser())
   const token = ref<string | null>(getToken())
   const isLoading = ref(false)
+
+  // Flag agar initFromStorage() hanya efektif dijalankan sekali per sesi.
+  // Guard ini dipakai oleh router guard (BUG-11 fix di guards.ts).
+  let _initialized = false
 
   const isAuthenticated = computed(() =>
     !!token.value && !!user.value && !isTokenExpired(token.value)
@@ -19,9 +23,11 @@ export const useAuthStore = defineStore('auth', () => {
   const userRole = computed(() => user.value?.role ?? null)
 
   // ── Setup unauthorized handler ────────────────────────────────
+  // BUG-04 NOTE: setUnauthorizedHandler di-call sekali saat store pertama kali dibuat.
+  // Ini aman karena Pinia store factory hanya berjalan sekali.
   setUnauthorizedHandler(() => {
     logout()
-    // Redirect ditangani di router guard
+    // Redirect ditangani di router guard yang memantau isAuthenticated
   })
 
   // ── Actions ──────────────────────────────────────────────────
@@ -53,17 +59,32 @@ export const useAuthStore = defineStore('auth', () => {
       const me = await authService.me()
       user.value = me
       setStoredUser(me)
-    } catch {
-      // Token mungkin sudah expired
-      logout()
+    } catch (err: unknown) {
+      // BUG-06 FIX: Jangan logout() pada semua error.
+      // Hanya logout jika server dengan tegas menolak (401/403),
+      // bukan saat network error atau timeout sementara.
+      // gasRequest() sudah melempar Error dengan message 'Sesi berakhir...' untuk 401.
+      const msg = err instanceof Error ? err.message : ''
+      const isAuthError =
+        msg.includes('Sesi berakhir') ||
+        msg.includes('Token tidak valid') ||
+        msg.includes('Sesi tidak valid')
+      if (isAuthError) {
+        logout()
+      }
+      // Network error / timeout: biarkan sesi tetap aktif
     }
   }
 
   /**
    * Inisialisasi dari storage saat app pertama kali load.
-   * Dipanggil di router beforeEach.
+   * BUG-11 FIX: Dipanggil sekali saja via flag _initialized,
+   * sehingga tidak re-evaluasi setiap navigasi.
    */
   function initFromStorage(): void {
+    if (_initialized) return
+    _initialized = true
+
     const storedToken = getToken()
     const storedUser = getStoredUser()
     if (storedToken && storedUser && !isTokenExpired(storedToken)) {
