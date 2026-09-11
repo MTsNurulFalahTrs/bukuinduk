@@ -41,6 +41,8 @@
             class="w-36"
             @update:model-value="onFilterChange"
           />
+          <!-- BUG-15 FIX: Tambah opsi "Semua Kelas" di awal list agar user bisa
+               menghapus filter kelas tanpa harus klik tombol Reset -->
           <BaseSelect
             v-model="filters.classroomId"
             :options="classroomOptions"
@@ -163,7 +165,8 @@
       </div>
     </BaseCard>
 
-    <!-- Confirm archive dialog -->
+    <!-- BUG-16 FIX: Gunakan BaseConfirmDialog yang terikat pada confirmDialog state
+         yang diisi via confirm() Promise pattern, bukan mutasi langsung -->
     <BaseConfirmDialog
       v-model="confirmDialog.isOpen.value"
       title="Arsipkan Siswa"
@@ -171,7 +174,8 @@
       type="warning"
       confirm-text="Ya, Arsipkan"
       :loading="confirmDialog.isLoading.value"
-      @confirm="confirmArchive"
+      @confirm="onConfirmArchive"
+      @cancel="confirmDialog.onCancel()"
     />
   </div>
 </template>
@@ -210,12 +214,18 @@ const hasActiveFilters = computed(() =>
 
 const statusOptions = STUDENT_STATUS_OPTIONS
 const genderOptions = GENDER_OPTIONS
+
+// BUG-15 FIX: Tambah opsi kosong "Semua Kelas" di awal agar user bisa clear filter kelas.
 const classroomOptions = computed(() => [
+  { value: '', label: 'Semua Kelas' },
   ...classroomsStore.classroomOptions,
 ])
 
-// Debounced search
-const { query: searchQuery } = useSearch((q) => {
+// BUG-14 FIX: useSearch hanya bertanggung jawab men-trigger fetch berdasarkan query.
+// resetFilters() tidak lagi meng-assign searchQuery.value = '' yang akan
+// men-trigger watch debounce dan menyebabkan double fetch.
+// Sebaliknya, kita gunakan flag untuk skip satu debounce cycle.
+const { query: searchQuery, clear: clearSearch } = useSearch((q) => {
   pagination.reset()
   studentsStore.setFilters({ search: q, page: 1 })
   studentsStore.fetchList()
@@ -239,7 +249,10 @@ function onFilterChange() {
 
 function resetFilters() {
   filters.value = { status: '', gender: '', classroomId: '' }
-  searchQuery.value = ''
+  // BUG-14 FIX: Gunakan clearSearch() yang memanggil onSearch('') langsung TANPA
+  // memicu debounce watch. Ini mencegah double fetch:
+  // sebelumnya searchQuery.value='' men-trigger watch → debounce → fetch lagi.
+  clearSearch()
   pagination.reset()
   studentsStore.resetFilters()
   studentsStore.fetchList()
@@ -257,29 +270,47 @@ function onSort(key: string, dir: 'asc' | 'desc') {
   studentsStore.fetchList()
 }
 
-// Archive
-let archiveTargetId = ''
+// ── Archive ───────────────────────────────────────────────────
+
+// BUG-17 FIX: Gunakan ref() bukan plain variable untuk archiveTargetId.
+// Plain variable bisa ditimpa oleh klik cepat berturut-turut sebelum dialog tampil.
+const archiveTargetId = ref('')
+
 async function handleArchive(id: string, name: string) {
-  archiveTargetId = id
-  confirmDialog.options.value.message = name
-  confirmDialog.isOpen.value = true
+  // BUG-16 FIX: Gunakan confirm() Promise pattern yang proper — set target ID
+  // SEBELUM confirm() dipanggil, lalu tunggu hasilnya.
+  archiveTargetId.value = id
+  const ok = await confirmDialog.confirm({
+    message: name,
+    type: 'warning',
+  })
+  if (ok) {
+    await doArchive()
+  }
 }
 
-async function confirmArchive() {
+async function doArchive() {
+  if (!archiveTargetId.value) return
   confirmDialog.isLoading.value = true
   try {
-    await studentsService.archive(archiveTargetId)
-    studentsStore.removeFromList(archiveTargetId)
+    await studentsService.archive(archiveTargetId.value)
+    studentsStore.removeFromList(archiveTargetId.value)
     toast.success('Siswa berhasil diarsipkan.')
     confirmDialog.isOpen.value = false
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : 'Gagal mengarsipkan siswa.')
   } finally {
     confirmDialog.isLoading.value = false
+    archiveTargetId.value = ''
   }
 }
 
-// Export
+// Handler untuk @confirm event dari BaseConfirmDialog
+function onConfirmArchive() {
+  doArchive()
+}
+
+// ── Export ────────────────────────────────────────────────────
 async function handleExport() {
   try {
     const data = await studentsService.exportData(studentsStore.filters)
