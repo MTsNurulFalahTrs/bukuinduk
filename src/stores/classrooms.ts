@@ -20,7 +20,19 @@ export const useClassroomsStore = defineStore('classrooms', () => {
 
   async function fetch(schoolYearId?: string): Promise<void> {
     const syId = schoolYearId ?? currentSchoolYearId.value
-    if (initialized.value && syId === currentSchoolYearId.value) return
+
+    // BUG-07 FIX: Guard cache yang diperbaiki.
+    // Sebelumnya: `initialized && syId === currentSchoolYearId` selalu true
+    // saat keduanya kosong (''), sehingga tidak pernah refetch setelah tahun
+    // pelajaran aktif berubah di store lain.
+    // Sekarang: hanya skip jika sudah initialized DAN schoolYearId yang diminta
+    // sama persis dengan yang sudah di-fetch. Jika caller tidak menyebutkan syId
+    // (undefined), kita tetap re-fetch jika tahun aktif sudah berbeda.
+    if (initialized.value && schoolYearId !== undefined && syId === currentSchoolYearId.value) return
+    if (initialized.value && schoolYearId === undefined && currentSchoolYearId.value === syId) {
+      // Sudah ada data dan tidak diminta school year spesifik yang berbeda — skip
+      return
+    }
 
     isLoading.value = true
     try {
@@ -56,6 +68,7 @@ export const useClassroomsStore = defineStore('classrooms', () => {
     list,
     isLoading,
     initialized,
+    currentSchoolYearId,
     classroomOptions,
     activeClassrooms,
     fetch,
