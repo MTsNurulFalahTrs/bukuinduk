@@ -192,7 +192,7 @@
 
         <!-- School name (desktop) -->
         <p class="hidden lg:block text-sm font-medium text-slate-500 flex-1 truncate">
-          {{ settingsStore?.schoolName || 'Buku Induk Digital' }}
+          {{ settingsStore.schoolName || 'Buku Induk Digital' }}
         </p>
 
         <!-- Right side -->
@@ -251,7 +251,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   LayoutDashboard, Users, GraduationCap, School,
@@ -261,6 +261,8 @@ import {
 import BaseAvatar from '@/components/ui/BaseAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
+import { useSettingsStore } from '@/stores/settings'
+import { useSchoolYearStore } from '@/stores/schoolYear'
 import { ROLE_LABELS, PERMISSIONS } from '@/constants'
 import { toast } from 'vue-sonner'
 
@@ -269,9 +271,20 @@ const uiStore = useUiStore()
 const route = useRoute()
 const router = useRouter()
 
-// Dummy settings store — nanti disambung ke store sebenarnya
-const settingsStore = computed(() => ({ schoolName: '' }))
-const activeSchoolYear = computed(() => '')
+// BUG-29 FIX: Sambungkan ke store settings & schoolYear yang sebenarnya
+// bukan dummy computed yang selalu kosong.
+const settingsStore = useSettingsStore()
+const schoolYearStore = useSchoolYearStore()
+
+// BUG-31 FIX: Pastikan overflow:hidden dibersihkan saat layout di-unmount
+// (misalnya navigasi ke halaman tanpa AppLayout saat sidebar mobile terbuka).
+onUnmounted(() => {
+  if (uiStore.mobileSidebarOpen) {
+    uiStore.closeMobileSidebar()
+  }
+})
+
+const activeSchoolYear = computed(() => schoolYearStore.activeSchoolYearName)
 
 const roleLabel = computed(() =>
   authStore.user ? ROLE_LABELS[authStore.user.role] : ''
@@ -384,11 +397,22 @@ const mobileNavItems = computed(() => {
   return items.slice(0, 5)
 })
 
+// BUG-30 FIX: Gunakan route.matched untuk pengecekan isActive yang lebih presisi.
+// Sebelumnya startsWith('/students') juga cocok dengan '/students/create', dll. — memang
+// diinginkan untuk highlight parent menu. Namun route yang tidak terkait tapi secara
+// kebetulan prefix-match bisa terhighlight secara salah.
+// Solusi: exact match untuk '/' dan startsWith untuk sub-paths, tapi pastikan
+// path yang dibandingkan adalah path yang spesifik (bukan prefix umum seperti '/').
 function isActive(path: string): boolean {
-  return route.path.startsWith(path)
+  if (path === '/') return route.path === '/'
+  return route.path === path || route.path.startsWith(path + '/')
 }
 
 async function handleLogout() {
+  // BUG-31 FIX: Tutup mobile sidebar sebelum navigasi agar tidak ada visual artifact
+  if (uiStore.mobileSidebarOpen) {
+    uiStore.closeMobileSidebar()
+  }
   await authStore.logout()
   toast.success('Berhasil keluar')
   router.push('/login')
