@@ -61,7 +61,36 @@ export async function gasRequest<T = unknown>(
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
-    const data: ApiResponse<T> = await response.json()
+    // Baca sebagai teks dulu — jika GAS mengembalikan HTML (halaman error
+    // Google / login page), kita beri pesan yang jelas, bukan JSON parse error.
+    const text = await response.text()
+
+    // Deteksi HTML response dari GAS (tanda deployment bermasalah)
+    if (text.trimStart().startsWith('<')) {
+      if (text.includes('accounts.google.com') || text.includes('signin')) {
+        throw new Error(
+          'GAS meminta login Google. Pastikan deployment diset "Who has access: Anyone".'
+        )
+      }
+      if (text.includes('Script function not found')) {
+        throw new Error(
+          'Fungsi doGet tidak ditemukan di GAS. Pastikan kode sudah disimpan dan deployment diperbarui.'
+        )
+      }
+      throw new Error(
+        'GAS mengembalikan halaman HTML, bukan JSON. ' +
+        'Kemungkinan penyebab: (1) Deployment GAS belum diperbarui setelah kode diubah, ' +
+        '(2) URL deployment salah, atau (3) ada error di GAS script. ' +
+        'Buka URL GAS di browser untuk melihat error-nya.'
+      )
+    }
+
+    let data: ApiResponse<T>
+    try {
+      data = JSON.parse(text)
+    } catch {
+      throw new Error(`Response bukan JSON yang valid. Respons awal: ${text.slice(0, 100)}`)
+    }
 
     if (data.status === 401) {
       clearAuth()
