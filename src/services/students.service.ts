@@ -118,14 +118,21 @@ export const studentsService = {
 
   // ── Stats ─────────────────────────────────────────────────────
 
+  /**
+   * BUG-62 FIX: Return type sekarang cocok dengan nama field yang dikembalikan GAS backend
+   * (totalStudents, activeStudents, maleStudents, dll.) — bukan alias yang salah
+   * (total, active, male, dll.).
+   */
   async getStats(): Promise<{
-    total: number
-    active: number
-    male: number
-    female: number
-    graduated: number
-    transferred: number
-    newThisYear: number
+    totalStudents: number
+    activeStudents: number
+    maleStudents: number
+    femaleStudents: number
+    graduatedStudents: number
+    transferredStudents: number
+    newStudentsThisYear: number
+    totalTeachers: number
+    totalClassrooms: number
   }> {
     return gasRequest('students.getStats')
   },
