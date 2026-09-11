@@ -1,19 +1,7 @@
-import axios from 'axios'
-import type { AxiosInstance, AxiosRequestConfig } from 'axios'
 import type { ApiResponse, GasRequest } from '@/types'
 import { getToken, clearAuth } from '@/utils'
 
-// ── GAS hanya punya 1 endpoint POST ──────────────────────────
 const GAS_URL = import.meta.env.VITE_GAS_URL as string
-
-// Axios instance (dipakai untuk request non-GAS jika ada)
-export const http: AxiosInstance = axios.create({
-  baseURL: GAS_URL,
-  timeout: 30_000,
-  headers: { 'Content-Type': 'application/json' },
-})
-
-// ── Core function: semua request ke GAS ──────────────────────
 
 let _onUnauthorized: (() => void) | null = null
 
@@ -23,8 +11,18 @@ export function setUnauthorizedHandler(handler: () => void) {
 
 /**
  * Kirim request ke Google Apps Script Web App.
- * GAS hanya mendukung doGet/doPost, jadi semua request adalah POST
- * dengan body: { action, payload, token }.
+ *
+ * GAS tidak mendukung CORS preflight (OPTIONS), sehingga kita TIDAK boleh
+ * mengirim header `Content-Type: application/json` — header tersebut
+ * menyebabkan browser mengirim preflight yang langsung ditolak GAS (405).
+ *
+ * Solusi: kirim sebagai `text/plain` (simple request, tidak ada preflight).
+ * GAS tetap dapat membaca body-nya via `e.postData.contents`.
+ *
+ * Selain itu, GAS sering melakukan redirect 302 saat pertama kali diakses.
+ * `fetch` dengan `redirect: 'follow'` menangani ini secara otomatis,
+ * sedangkan Axios bisa gagal di beberapa browser. Maka kita pakai
+ * native `fetch` di sini.
  */
 export async function gasRequest<T = unknown>(
   action: string,
@@ -40,13 +38,26 @@ export async function gasRequest<T = unknown>(
 
   const body: GasRequest = { action, payload, token: token ?? undefined }
 
-  const config: AxiosRequestConfig = {
-    timeout: options?.timeout ?? 30_000,
-  }
+  // AbortController untuk timeout manual
+  const controller = new AbortController()
+  const timeoutMs  = options?.timeout ?? 30_000
+  const timer      = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await http.post<ApiResponse<T>>('', body, config)
-    const data = response.data
+    const response = await fetch(GAS_URL, {
+      method:   'POST',
+      // text/plain → "simple request" → tidak ada CORS preflight
+      headers:  { 'Content-Type': 'text/plain;charset=utf-8' },
+      body:     JSON.stringify(body),
+      redirect: 'follow',   // GAS sering redirect 302
+      signal:   controller.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const data: ApiResponse<T> = await response.json()
 
     if (data.status === 401) {
       clearAuth()
@@ -63,15 +74,16 @@ export async function gasRequest<T = unknown>(
     }
 
     return data.data as T
+
   } catch (err: unknown) {
-    if (axios.isAxiosError(err)) {
-      if (err.code === 'ECONNABORTED') {
-        throw new Error('Koneksi timeout. Periksa koneksi internet Anda.')
-      }
-      if (!err.response) {
-        throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet Anda.')
-      }
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Koneksi timeout. Periksa koneksi internet Anda.')
+    }
+    if (err instanceof TypeError && err.message.includes('fetch')) {
+      throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet Anda.')
     }
     throw err
+  } finally {
+    clearTimeout(timer)
   }
 }
