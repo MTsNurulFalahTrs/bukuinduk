@@ -58,7 +58,11 @@ export const useStudentsStore = defineStore('students', () => {
       return student
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : 'Gagal memuat data siswa.'
-      return null
+      // BUG-19 FIX: Lempar ulang error agar caller (view) bisa catch dan
+      // menampilkan error state. Sebelumnya silent fail menyebabkan halaman kosong
+      // tanpa loading, tanpa error, karena view mengecek error.value via try/catch
+      // yang tidak pernah masuk blok catch.
+      throw new Error(error.value ?? 'Gagal memuat data siswa.')
     } finally {
       isLoadingDetail.value = false
     }
