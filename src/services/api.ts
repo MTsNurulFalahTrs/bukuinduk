@@ -1,7 +1,15 @@
 import type { ApiResponse, GasRequest } from '@/types'
 import { getToken, clearAuth } from '@/utils'
 
+// BUG-01 FIX: Validasi VITE_GAS_URL di module level agar error terdeteksi saat startup,
+// bukan saat request pertama dengan pesan "Failed to fetch" yang tidak informatif.
 const GAS_URL = import.meta.env.VITE_GAS_URL as string
+if (!GAS_URL) {
+  throw new Error(
+    'VITE_GAS_URL belum dikonfigurasi. ' +
+    'Tambahkan VITE_GAS_URL=<url_deployment_GAS> di file .env.local atau .env.production.'
+  )
+}
 
 let _onUnauthorized: (() => void) | null = null
 
@@ -100,7 +108,9 @@ export async function gasRequest<T = unknown>(
     }
 
     if (data.status === 401) {
-      clearAuth()
+      // BUG-03 FIX: Hapus auth data SEKALI lewat _onUnauthorized (yang memanggil logout()
+      // yang sudah memanggil clearAuth()). Jangan clearAuth() di sini juga agar tidak
+      // double-clear dan tidak memicu logout() GAS request dengan token yang sudah kosong.
       _onUnauthorized?.()
       throw new Error('Sesi berakhir. Silakan login kembali.')
     }
@@ -122,8 +132,10 @@ export async function gasRequest<T = unknown>(
         'GAS mungkin sedang cold start. Coba lagi dalam beberapa saat.'
       )
     }
-    // TypeError dari fetch biasanya network error murni (offline, DNS gagal)
-    if (err instanceof TypeError && !(err instanceof RangeError)) {
+    // BUG-02 FIX: TypeError check yang benar — TypeError adalah network error (fetch gagal),
+    // tidak ada hubungannya dengan RangeError (RangeError BUKAN subclass TypeError).
+    // Kondisi lama !(err instanceof RangeError) selalu true dan menyesatkan.
+    if (err instanceof TypeError) {
       throw new Error(
         'Tidak dapat terhubung ke server GAS. ' +
         'Periksa koneksi internet dan pastikan URL GAS benar.'
