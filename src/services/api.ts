@@ -12,17 +12,20 @@ export function setUnauthorizedHandler(handler: () => void) {
 /**
  * Kirim request ke Google Apps Script Web App.
  *
- * GAS tidak mendukung CORS preflight (OPTIONS), sehingga kita TIDAK boleh
- * mengirim header `Content-Type: application/json` — header tersebut
- * menyebabkan browser mengirim preflight yang langsung ditolak GAS (405).
+ * MASALAH MENDASAR GAS:
+ * GAS menggunakan pola POST-Redirect-GET (302). Saat browser mengikuti
+ * redirect 302 dari script.google.com ke script.googleusercontent.com,
+ * browser MENGUBAH POST menjadi GET secara otomatis (RFC 7231 §6.4.3).
+ * Akibatnya script.googleusercontent.com menerima GET, bukan POST → 405.
  *
- * Solusi: kirim sebagai `text/plain` (simple request, tidak ada preflight).
- * GAS tetap dapat membaca body-nya via `e.postData.contents`.
+ * SOLUSI:
+ * Kirim semua request sebagai GET dengan payload di-encode sebagai
+ * query parameter "data". GAS membacanya di doGet via e.parameter.data.
+ * GET request tidak mengalami masalah redirect method change.
  *
- * Selain itu, GAS sering melakukan redirect 302 saat pertama kali diakses.
- * `fetch` dengan `redirect: 'follow'` menangani ini secara otomatis,
- * sedangkan Axios bisa gagal di beberapa browser. Maka kita pakai
- * native `fetch` di sini.
+ * Keterbatasan: URL maksimal ~8KB. Untuk payload besar (import batch),
+ * payload dipecah atau dikompres. Untuk kebutuhan aplikasi Buku Induk
+ * dengan data per-request yang wajar, ini aman.
  */
 export async function gasRequest<T = unknown>(
   action: string,
@@ -38,18 +41,19 @@ export async function gasRequest<T = unknown>(
 
   const body: GasRequest = { action, payload, token: token ?? undefined }
 
+  // Encode payload sebagai query parameter
+  const encodedData = encodeURIComponent(JSON.stringify(body))
+  const url = `${GAS_URL}?data=${encodedData}`
+
   // AbortController untuk timeout manual
   const controller = new AbortController()
   const timeoutMs  = options?.timeout ?? 30_000
   const timer      = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await fetch(GAS_URL, {
-      method:   'POST',
-      // text/plain → "simple request" → tidak ada CORS preflight
-      headers:  { 'Content-Type': 'text/plain;charset=utf-8' },
-      body:     JSON.stringify(body),
-      redirect: 'follow',   // GAS sering redirect 302
+    const response = await fetch(url, {
+      method:   'GET',
+      redirect: 'follow',
       signal:   controller.signal,
     })
 
@@ -79,7 +83,7 @@ export async function gasRequest<T = unknown>(
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new Error('Koneksi timeout. Periksa koneksi internet Anda.')
     }
-    if (err instanceof TypeError && err.message.includes('fetch')) {
+    if (err instanceof TypeError) {
       throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet Anda.')
     }
     throw err
