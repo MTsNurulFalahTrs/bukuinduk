@@ -43,13 +43,17 @@
             <BaseInput v-model="schoolForm.principalNip" label="NIP Kepala Sekolah" placeholder="NIP (opsional)" />
           </div>
 
+          <!-- BUG-58 FIX: Tahun pelajaran aktif ditangani terpisah via setActiveSY(),
+               bukan disimpan sebagai settings key-value biasa.
+               Section ini sekarang hanya tampil informasi + tombol aksi di tab Tahun Pelajaran. -->
           <div class="mt-6 pt-4 border-t border-slate-100">
-            <p class="text-sm font-medium text-slate-700 mb-3">Tahun Pelajaran Aktif</p>
-            <BaseSelect
-              v-model="schoolForm.academicYear"
-              :options="schoolYearStore.schoolYearOptions"
-              placeholder="Pilih tahun pelajaran aktif"
-            />
+            <p class="text-sm font-medium text-slate-700 mb-1">Tahun Pelajaran Aktif</p>
+            <p class="text-sm text-slate-500">
+              {{ schoolYearStore.activeSchoolYearName || 'Belum ada tahun pelajaran aktif' }}
+            </p>
+            <p class="text-xs text-slate-400 mt-1">
+              Untuk mengubah tahun pelajaran aktif, buka tab <strong>Tahun Pelajaran</strong>.
+            </p>
           </div>
         </BaseCard>
 
@@ -97,7 +101,7 @@
               </button>
               <button
                 class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                @click="deleteSY(sy.id, sy.name)"
+                @click="handleDeleteSY(sy.id, sy.name)"
               >
                 <Trash2 class="h-4 w-4" />
               </button>
@@ -124,6 +128,17 @@
           </div>
         </template>
       </BaseModal>
+
+      <!-- BUG-57 FIX: Ganti window.confirm() dengan BaseConfirmDialog yang konsisten -->
+      <BaseConfirmDialog
+        v-model="confirmDeleteSY.isOpen.value"
+        title="Hapus Tahun Pelajaran"
+        :message="`Hapus tahun pelajaran '${confirmDeleteSY.options.value.message}'? Tindakan ini tidak dapat dibatalkan.`"
+        type="danger"
+        confirm-text="Ya, Hapus"
+        :loading="confirmDeleteSY.isLoading.value"
+        @confirm="confirmDoDeleteSY"
+      />
     </template>
 
     <!-- Tab: Backup -->
@@ -152,9 +167,13 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Save, Plus, Trash2, Download, Building2, Calendar, Database } from 'lucide-vue-next'
 import { PageHeader } from '@/components/shared'
-import { BaseCard, BaseInput, BaseSelect, BaseButton, BaseAlert, BaseBadge, BaseSkeleton, BaseModal } from '@/components/ui'
+import {
+  BaseCard, BaseInput, BaseButton, BaseAlert, BaseBadge,
+  BaseSkeleton, BaseModal, BaseConfirmDialog,
+} from '@/components/ui'
 import { useSettingsStore } from '@/stores/settings'
 import { useSchoolYearStore } from '@/stores/schoolYear'
+import { useConfirm } from '@/composables'
 import { classroomsService, settingsService } from '@/services'
 import { formatDate } from '@/utils'
 import { schoolYearSchema } from '@/utils/validation'
@@ -175,11 +194,14 @@ const tabs = [
   { key: 'backup', label: 'Backup Data', icon: Database },
 ]
 
-// School settings form
+// ── School settings form ─────────────────────────────────────
+// BUG-58 FIX: Hilangkan field academicYear dari form settings.
+// Tahun pelajaran aktif dikelola via setActiveSY() di tab Tahun Pelajaran,
+// bukan disimpan sebagai key-value di sheet settings.
 const schoolForm = reactive({
   schoolName: '', schoolNpsn: '', schoolAddress: '',
   schoolPhone: '', schoolEmail: '', schoolWebsite: '',
-  principalName: '', principalNip: '', academicYear: '',
+  principalName: '', principalNip: '',
 })
 
 async function saveSchoolSettings() {
@@ -195,11 +217,15 @@ async function saveSchoolSettings() {
   } finally { isSaving.value = false }
 }
 
-// School year
+// ── School year ───────────────────────────────────────────────
 const showAddSY = ref(false)
 const isSavingSY = ref(false)
 const syForm = reactive({ name: '', startDate: '', endDate: '', isActive: false })
 const syErrors = reactive<Record<string, string>>({})
+
+// BUG-57 FIX: Gunakan useConfirm() + BaseConfirmDialog alih-alih window.confirm()
+const confirmDeleteSY = useConfirm()
+let _deleteSYId = ''
 
 function openAddSY() {
   Object.assign(syForm, { name: '', startDate: '', endDate: '', isActive: false })
@@ -239,18 +265,26 @@ async function setActiveSY(id: string) {
   }
 }
 
-async function deleteSY(id: string, name: string) {
-  if (!confirm(`Hapus tahun pelajaran "${name}"?`)) return
-  try {
-    await classroomsService.deleteSchoolYear(id)
-    schoolYearStore.removeSchoolYear(id)
-    toast.success('Tahun pelajaran dihapus.')
-  } catch (e: unknown) {
-    toast.error(e instanceof Error ? e.message : 'Gagal menghapus.')
-  }
+function handleDeleteSY(id: string, name: string) {
+  // BUG-57 FIX: Gunakan dialog konfirmasi custom, bukan window.confirm()
+  _deleteSYId = id
+  confirmDeleteSY.options.value = { message: name, type: 'danger' }
+  confirmDeleteSY.isOpen.value = true
 }
 
-// Backup
+async function confirmDoDeleteSY() {
+  confirmDeleteSY.isLoading.value = true
+  try {
+    await classroomsService.deleteSchoolYear(_deleteSYId)
+    schoolYearStore.removeSchoolYear(_deleteSYId)
+    toast.success('Tahun pelajaran dihapus.')
+    confirmDeleteSY.isOpen.value = false
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : 'Gagal menghapus.')
+  } finally { confirmDeleteSY.isLoading.value = false }
+}
+
+// ── Backup ────────────────────────────────────────────────────
 async function handleBackup() {
   isBackingUp.value = true
   try {
@@ -260,8 +294,13 @@ async function handleBackup() {
     const a = document.createElement('a')
     a.href = url
     a.download = `backup-buku-induk-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    // BUG-56 FIX: Tunda revoke agar browser sempat memulai download
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    }, 150)
     toast.success('Backup berhasil didownload.')
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : 'Gagal membuat backup.')
@@ -270,7 +309,20 @@ async function handleBackup() {
 
 onMounted(async () => {
   await Promise.all([settingsStore.fetch(), schoolYearStore.fetch()])
-  if (settingsStore.data) Object.assign(schoolForm, settingsStore.data)
-  schoolForm.academicYear = schoolYearStore.activeSchoolYear?.id ?? ''
+  // Isi form dari store — tanpa academicYear (BUG-58 fix)
+  if (settingsStore.data) {
+    const { schoolName, schoolNpsn, schoolAddress, schoolPhone, schoolEmail,
+            schoolWebsite, principalName, principalNip } = settingsStore.data
+    Object.assign(schoolForm, {
+      schoolName:    schoolName    ?? '',
+      schoolNpsn:    schoolNpsn    ?? '',
+      schoolAddress: schoolAddress ?? '',
+      schoolPhone:   schoolPhone   ?? '',
+      schoolEmail:   schoolEmail   ?? '',
+      schoolWebsite: schoolWebsite ?? '',
+      principalName: principalName ?? '',
+      principalNip:  principalNip  ?? '',
+    })
+  }
 })
 </script>
