@@ -238,6 +238,15 @@ const InfoRow = {
 const ParentCard = {
   props: { parent: Object, relationship: String, showSensitive: Boolean },
   components: { BaseCard, InfoRow },
+  methods: {
+    // BUG-21 FIX: normalizeIsAlive harus disertakan sebagai method di component object
+    // agar bisa diakses dari template string. Nilai isAlive dari spreadsheet bisa berupa
+    // boolean true/false, string "TRUE"/"FALSE", number 0/1, atau null.
+    normalizeIsAlive(val: unknown): boolean {
+      if (val === false || val === 'FALSE' || val === 'false' || val === 0) return false
+      return true
+    },
+  },
   template: `
     <BaseCard :title="{ father: 'Ayah', mother: 'Ibu', guardian: 'Wali' }[relationship]">
       <div v-if="parent" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
@@ -248,7 +257,7 @@ const ParentCard = {
         <InfoRow label="Pekerjaan" :value="parent.occupation" />
         <InfoRow label="Penghasilan" :value="parent.incomeRange" />
         <InfoRow label="No. HP" :value="parent.phone" />
-        <InfoRow label="Status" :value="parent.isAlive === false ? 'Almarhum/ah' : 'Masih hidup'" />
+        <InfoRow label="Status" :value="normalizeIsAlive(parent.isAlive) === false ? 'Almarhum/ah' : 'Masih hidup'" />
       </div>
       <p v-else class="text-sm text-slate-400 mt-2">Data tidak tersedia.</p>
     </BaseCard>
@@ -267,6 +276,16 @@ const activeTab = ref('identity')
 const enrollments = ref<StudentEnrollment[]>([])
 const showArchiveDialog = ref(false)
 const isArchiving = ref(false)
+
+/**
+ * BUG-21 FIX: Normalizer untuk field isAlive yang bisa datang dari spreadsheet
+ * dalam berbagai tipe: boolean true/false, string "TRUE"/"FALSE", atau null/undefined.
+ * Hanya return false (almarhum) jika nilai secara eksplisit menunjukkan false.
+ */
+function normalizeIsAlive(val: unknown): boolean {
+  if (val === false || val === 'FALSE' || val === 'false' || val === 0) return false
+  return true // default: masih hidup jika tidak ada data
+}
 
 const tabs = [
   { key: 'identity', label: 'Identitas' },
@@ -303,8 +322,13 @@ async function confirmArchive() {
 onMounted(async () => {
   const id = route.params.id as string
   studentsStore.clearCurrent()
+  // BUG-18 FIX: Reset error state di awal agar error lama dari navigasi sebelumnya
+  // tidak tampil sebentar sebelum data baru dimuat.
+  error.value = ''
   isLoading.value = true
   try {
+    // BUG-19 FIX: fetchDetail() sekarang melempar error jika gagal (diperbaiki di store).
+    // Sehingga catch di sini akan menangkap error dan menampilkan pesan error ke user.
     await studentsStore.fetchDetail(id)
     if (student.value) {
       enrollments.value = await studentsService.getEnrollments(id)
