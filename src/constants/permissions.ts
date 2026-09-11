@@ -52,7 +52,17 @@ export const PERMISSIONS = {
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]
 
-// Matrix hak akses per role
+/**
+ * Matrix hak akses per role — harus sinkron dengan ROLE_PERMISSIONS di gas-backend/Main.gs
+ *
+ * BUG-63 FIX: Sinkronkan dengan backend Main.gs.
+ * - teacher: hapus STUDENT_VIEW_DETAIL dan DASHBOARD_TEACHER yang tidak ada di backend,
+ *   tambahkan SCHOOL_YEAR_VIEW agar teacher bisa lihat daftar tahun pelajaran.
+ * - admin: tambahkan DASHBOARD_TEACHER (opsional untuk fallback view).
+ *
+ * BUG-64 FIX: Tambahkan SETTINGS_VIEW ke principal agar mereka bisa mengakses
+ * halaman /settings (read-only). Principal tidak mendapat SETTINGS_MANAGE.
+ */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
     PERMISSIONS.STUDENT_VIEW_ALL,
@@ -90,15 +100,24 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.SCHOOL_YEAR_VIEW,
     PERMISSIONS.REPORT_VIEW_ALL,
     PERMISSIONS.REPORT_EXPORT,
+    // BUG-64 FIX: Principal dapat melihat settings (read-only)
+    PERMISSIONS.SETTINGS_VIEW,
     PERMISSIONS.DASHBOARD_PRINCIPAL,
   ],
   teacher: [
+    // BUG-63 FIX: Sesuaikan dengan backend Main.gs ROLE_PERMISSIONS.teacher
+    // Hapus: STUDENT_VIEW_DETAIL (tidak ada di backend — backend hanya cek view:own_class atau view:all)
+    // Hapus: DASHBOARD_TEACHER (tidak ada di backend — tidak perlu permission check untuk dashboard teacher)
+    // Tambah: SCHOOL_YEAR_VIEW (ada di backend, dibutuhkan untuk dropdown tahun pelajaran)
     PERMISSIONS.STUDENT_VIEW_OWN_CLASS,
-    PERMISSIONS.STUDENT_VIEW_DETAIL,
     PERMISSIONS.STUDENT_EXPORT_OWN,
     PERMISSIONS.CLASSROOM_VIEW_OWN,
     PERMISSIONS.SCHOOL_YEAR_VIEW,
     PERMISSIONS.REPORT_VIEW_OWN,
-    PERMISSIONS.DASHBOARD_TEACHER,
   ],
 }
+
+// BUG-63 FIX: Sinkronkan juga di gas-backend/Main.gs ROLE_PERMISSIONS:
+// teacher sekarang: ['student:view:own_class','student:export:own','classroom:view:own',
+//                    'school_year:view','report:view:own']
+// (tanpa 'student:view:detail' dan 'dashboard:teacher')
