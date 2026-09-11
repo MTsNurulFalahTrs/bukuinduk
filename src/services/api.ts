@@ -12,20 +12,23 @@ export function setUnauthorizedHandler(handler: () => void) {
 /**
  * Kirim request ke Google Apps Script Web App.
  *
- * MASALAH MENDASAR GAS:
- * GAS menggunakan pola POST-Redirect-GET (302). Saat browser mengikuti
- * redirect 302 dari script.google.com ke script.googleusercontent.com,
- * browser MENGUBAH POST menjadi GET secara otomatis (RFC 7231 §6.4.3).
- * Akibatnya script.googleusercontent.com menerima GET, bukan POST → 405.
+ * Pendekatan: POST dengan Content-Type application/x-www-form-urlencoded
  *
- * SOLUSI:
- * Kirim semua request sebagai GET dengan payload di-encode sebagai
- * query parameter "data". GAS membacanya di doGet via e.parameter.data.
- * GET request tidak mengalami masalah redirect method change.
+ * Mengapa bukan JSON POST? GAS melakukan 302 redirect, dan browser mengubah
+ * POST → GET saat follow redirect → 405.
  *
- * Keterbatasan: URL maksimal ~8KB. Untuk payload besar (import batch),
- * payload dipecah atau dikompres. Untuk kebutuhan aplikasi Buku Induk
- * dengan data per-request yang wajar, ini aman.
+ * Mengapa bukan GET dengan query param? URL bisa terpotong oleh GAS/proxy
+ * saat payload besar, menyebabkan e.parameter.data undefined di GAS.
+ *
+ * Solusi terbaik yang bekerja di GAS:
+ * - POST dengan body berformat application/x-www-form-urlencoded
+ * - Ini adalah "simple request" CORS → tidak ada preflight OPTIONS
+ * - GAS menerimanya di doPost via e.parameter (bukan e.postData.contents)
+ * - Tidak ada masalah URL length
+ * - Tidak ada masalah redirect method change karena GAS membaca parameter
+ *   sebelum redirect terjadi
+ *
+ * Cara GAS membaca: e.parameter.action, e.parameter.payload, e.parameter.token
  */
 export async function gasRequest<T = unknown>(
   action: string,
@@ -39,20 +42,21 @@ export async function gasRequest<T = unknown>(
     throw new Error('Sesi tidak valid. Silakan login kembali.')
   }
 
-  const body: GasRequest = { action, payload, token: token ?? undefined }
+  // Kirim sebagai form fields terpisah agar GAS bisa baca via e.parameter
+  const formData = new URLSearchParams()
+  formData.set('action',  action)
+  formData.set('payload', JSON.stringify(payload ?? {}))
+  if (token) formData.set('token', token)
 
-  // Encode payload sebagai query parameter
-  const encodedData = encodeURIComponent(JSON.stringify(body))
-  const url = `${GAS_URL}?data=${encodedData}`
-
-  // AbortController untuk timeout manual
   const controller = new AbortController()
-  const timeoutMs  = options?.timeout ?? 30_000
+  const timeoutMs  = options?.timeout ?? 60_000   // GAS cold start bisa ~10–20 detik
   const timer      = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await fetch(url, {
-      method:   'GET',
+    const response = await fetch(GAS_URL, {
+      method:   'POST',
+      headers:  { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:     formData.toString(),
       redirect: 'follow',
       signal:   controller.signal,
     })
@@ -61,27 +65,28 @@ export async function gasRequest<T = unknown>(
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
-    // Baca sebagai teks dulu — jika GAS mengembalikan HTML (halaman error
-    // Google / login page), kita beri pesan yang jelas, bukan JSON parse error.
     const text = await response.text()
 
-    // Deteksi HTML response dari GAS (tanda deployment bermasalah)
+    // Deteksi HTML — tanda deployment GAS bermasalah
     if (text.trimStart().startsWith('<')) {
       if (text.includes('accounts.google.com') || text.includes('signin')) {
         throw new Error(
-          'GAS meminta login Google. Pastikan deployment diset "Who has access: Anyone".'
+          'GAS meminta login Google. Buka GAS editor → Deploy → ' +
+          'pastikan "Who has access" diset ke "Anyone".'
         )
       }
-      if (text.includes('Script function not found')) {
+      if (text.includes('Script function not found') || text.includes('doPost')) {
         throw new Error(
-          'Fungsi doGet tidak ditemukan di GAS. Pastikan kode sudah disimpan dan deployment diperbarui.'
+          'Fungsi doPost tidak ditemukan. Pastikan Main.gs sudah disimpan ' +
+          'dan buat New Deployment di GAS.'
         )
       }
+      // Coba ekstrak pesan error dari HTML GAS jika ada
+      const match = text.match(/<title>([^<]+)<\/title>/)
+      const title = match ? match[1] : 'Unknown error'
       throw new Error(
-        'GAS mengembalikan halaman HTML, bukan JSON. ' +
-        'Kemungkinan penyebab: (1) Deployment GAS belum diperbarui setelah kode diubah, ' +
-        '(2) URL deployment salah, atau (3) ada error di GAS script. ' +
-        'Buka URL GAS di browser untuk melihat error-nya.'
+        `GAS mengembalikan HTML (${title}). ` +
+        'Buat New Deployment di GAS dan pastikan URL sudah diupdate di .env.production.'
       )
     }
 
@@ -89,7 +94,9 @@ export async function gasRequest<T = unknown>(
     try {
       data = JSON.parse(text)
     } catch {
-      throw new Error(`Response bukan JSON yang valid. Respons awal: ${text.slice(0, 100)}`)
+      throw new Error(
+        `Response GAS bukan JSON. Isi awal response: "${text.slice(0, 150)}"`
+      )
     }
 
     if (data.status === 401) {
@@ -110,10 +117,17 @@ export async function gasRequest<T = unknown>(
 
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('Koneksi timeout. Periksa koneksi internet Anda.')
+      throw new Error(
+        `Request timeout setelah ${timeoutMs / 1000} detik. ` +
+        'GAS mungkin sedang cold start. Coba lagi dalam beberapa saat.'
+      )
     }
-    if (err instanceof TypeError) {
-      throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet Anda.')
+    // TypeError dari fetch biasanya network error murni (offline, DNS gagal)
+    if (err instanceof TypeError && !(err instanceof RangeError)) {
+      throw new Error(
+        'Tidak dapat terhubung ke server GAS. ' +
+        'Periksa koneksi internet dan pastikan URL GAS benar.'
+      )
     }
     throw err
   } finally {
