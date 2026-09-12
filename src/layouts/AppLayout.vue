@@ -256,7 +256,7 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   LayoutDashboard, Users, GraduationCap, School,
   BookOpen, BarChart3, Settings, UserCog,
-  LogOut, Menu, X, PanelLeft, CalendarDays,
+  LogOut, Menu, X, PanelLeft, CalendarDays, Layers,
 } from 'lucide-vue-next'
 import BaseAvatar from '@/components/ui/BaseAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -343,6 +343,13 @@ const navItems: NavItem[] = [
     to: '/classrooms',
     icon: School,
     permission: PERMISSIONS.CLASSROOM_VIEW_ALL,
+  },
+  {
+    name: 'classrooms.grades',
+    label: 'Tingkat Kelas',
+    to: '/classrooms/grades',
+    icon: Layers,
+    permission: PERMISSIONS.CLASSROOM_MANAGE,
   },
   // Guru
   {
