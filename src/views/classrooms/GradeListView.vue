@@ -254,7 +254,7 @@ function validate(): boolean {
     errors.name = 'Nama tingkat wajib diisi.'
     valid = false
   }
-  if (form.level === undefined || form.level === null || isNaN(Number(form.level))) {
+  if (form.level === undefined || form.level === null || form.level === ('' as unknown) || isNaN(Number(form.level))) {
     errors.level = 'Urutan level wajib diisi.'
     valid = false
   } else if (Number(form.level) < 1) {
@@ -282,9 +282,10 @@ async function handleSubmit() {
       const updated = await classroomsService.updateGrade(editTarget.value.id, payload)
       // Sinkronisasi ke store agar gradeOptions di seluruh app terupdate
       schoolYearStore.updateGrade(updated)
-      // Update list lokal
+      // Update list lokal dan urutkan ulang — level bisa berubah saat edit
       const idx = grades.value.findIndex(g => g.id === updated.id)
       if (idx !== -1) grades.value[idx] = updated
+      grades.value.sort((a, b) => a.level - b.level)
       toast.success('Tingkat kelas berhasil diperbarui.')
     } else {
       // Create
