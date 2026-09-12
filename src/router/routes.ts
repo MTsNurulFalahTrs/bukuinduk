@@ -94,6 +94,12 @@ const routes: RouteRecordRaw[] = [
             meta: { title: 'Kelas & Rombel' },
           },
           {
+            path: 'grades',
+            name: 'classrooms.grades',
+            component: () => import('@/views/classrooms/GradeListView.vue'),
+            meta: { title: 'Tingkat Kelas', permission: PERMISSIONS.CLASSROOM_MANAGE },
+          },
+          {
             path: 'create',
             name: 'classrooms.create',
             component: () => import('@/views/classrooms/ClassroomFormView.vue'),
