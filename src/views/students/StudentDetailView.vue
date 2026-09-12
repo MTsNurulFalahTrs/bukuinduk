@@ -536,20 +536,17 @@ const studentsStore = useStudentsStore()
 const { can } = usePermission()
 
 /**
- * FIX RACE CONDITION: Simpan salinan data student secara lokal di ref ini.
- * Menggunakan ref lokal (bukan computed dari store.current) mencegah data
- * dari request siswa lain men-overwrite tampilan jika user navigasi cepat
- * antara dua halaman detail berbeda.
+ * student = data siswa yang sedang ditampilkan.
  *
- * Alur yang aman:
- * 1. onMounted simpan `_loadedStudentId`
- * 2. fetchDetail dipanggil
- * 3. Response diterima: CEK apakah ID masih sama (_loadedStudentId === result.id)
- * 4. Jika ya: set _studentData.value = result
- * 5. computed `student` membaca dari _studentData, bukan store.current global
+ * Menggunakan studentsStore.current (reactive computed) sebagai sumber utama,
+ * karena fetchDetail() di store selalu menge-set current.value setelah response
+ * diterima. Computed ini akan otomatis reaktif ketika store.current berubah.
+ *
+ * _studentData ref lokal tetap dipertahankan sebagai copy point untuk operasi
+ * yang membutuhkan snapshot (confirmRestore) tapi student SELALU membaca dari store.
  */
 const _studentData = ref<Student | null>(null)
-const student = computed(() => _studentData.value)
+const student = computed(() => studentsStore.current)
 
 const isLoading            = ref(true)
 const error                = ref('')
@@ -660,17 +657,15 @@ async function retryEnrollments(): Promise<void> {
 
 async function retryLoad(): Promise<void> {
   if (!_isMounted) return
-  isLoading.value    = true
-  error.value        = ''
-  enrollments.value  = []
-  _studentData.value = null
+  isLoading.value   = true
+  error.value       = ''
+  enrollments.value = []
+  studentsStore.clearCurrent()
 
   try {
-    const result = await studentsService.getFull(_loadedStudentId)
+    await studentsStore.fetchDetail(_loadedStudentId)
     if (!_isMounted) return
-    _studentData.value = result
-    // Perbarui store.current juga agar StudentFormView (edit) bisa pakai
-    studentsStore.updateInList(result)
+    _studentData.value = studentsStore.current
     await loadEnrollments()
   } catch (e: unknown) {
     if (!_isMounted) return
@@ -720,13 +715,13 @@ async function confirmRestore(): Promise<void> {
   try {
     await studentsService.restore(id)
     try {
-      const fresh = await studentsService.getFull(id)
-      if (_isMounted) _studentData.value = fresh
-      studentsStore.updateInList(fresh)
+      // Refetch via store agar store.current juga diperbarui
+      await studentsStore.fetchDetail(id)
+      if (_isMounted) _studentData.value = studentsStore.current
     } catch {
       // Fallback optimistic jika refetch gagal
       if (_isMounted && _studentData.value) {
-        const optimistic = { ..._studentData.value, status: 'active' as const }
+        const optimistic: Student = { ..._studentData.value, status: 'active' }
         _studentData.value = optimistic
         studentsStore.updateInList(optimistic)
       }
@@ -748,28 +743,23 @@ onMounted(async () => {
   _isMounted       = true
   _loadedStudentId = route.params.id as string
 
-  // Reset semua state lokal
-  _studentData.value = null
-  enrollments.value  = []
-  error.value        = ''
+  // Reset semua state
+  enrollments.value     = []
+  error.value           = ''
   enrollmentError.value = ''
-  isLoading.value    = true
+  isLoading.value       = true
+
+  // clearCurrent agar skeleton tampil (bukan data siswa lain yang tersisa)
+  studentsStore.clearCurrent()
 
   try {
-    // Panggil getFull langsung ke service (bukan lewat store.fetchDetail)
-    // agar response bisa dicek ID-nya sebelum di-assign ke state lokal,
-    // mencegah race condition saat user navigasi cepat antar detail siswa.
-    const result = await studentsService.getFull(_loadedStudentId)
-
-    // Guard: pastikan komponen masih mounted dan ID yang dimuat masih sama
+    // fetchDetail set store.current → student computed otomatis reaktif
+    await studentsStore.fetchDetail(_loadedStudentId)
     if (!_isMounted) return
 
-    _studentData.value = result
+    // Simpan snapshot untuk operasi restore
+    _studentData.value = studentsStore.current
 
-    // Perbarui store.current agar StudentFormView (edit mode) mendapat data terbaru
-    studentsStore.updateInList(result)
-
-    // Load enrollment history terpisah (getFull hanya berisi currentEnrollment aktif)
     await loadEnrollments()
 
   } catch (e: unknown) {
