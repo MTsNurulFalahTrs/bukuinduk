@@ -85,7 +85,17 @@ async function handleSubmit() {
 }
 
 onMounted(async () => {
-  await Promise.all([schoolYearStore.fetch()])
+  // Fetch schoolYear + grades. schoolYearStore.fetch() skip jika sudah initialized,
+  // tapi grades bisa kosong jika fetch pertama (via router guard) hanya berhasil
+  // sebagian. Cek setelah fetch dan retry grades jika masih kosong.
+  await schoolYearStore.fetch()
+
+  // Jika grades kosong setelah fetch (silent fail pertama kali atau store sudah
+  // initialized tapi grades belum terisi), fetch grades secara eksplisit.
+  if (schoolYearStore.grades.length === 0) {
+    await schoolYearStore.fetchGrades()
+  }
+
   form.schoolYearId = schoolYearStore.activeSchoolYear?.id ?? ''
 
   const teachers = await teachersService.listActive()
