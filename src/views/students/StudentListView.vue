@@ -1,53 +1,74 @@
 <template>
-  <div class="space-y-5">
-    <PageHeader title="Data Siswa" :subtitle="`${studentsStore.total} siswa ditemukan`">
+  <div class="space-y-4">
+
+    <!-- ── Page Header ─────────────────────────────────────────── -->
+    <!--
+      BUG-15 FIX: PageHeader memiliki mb-6 bawaan + space-y-4 container = dobel gap.
+      Gunakan wrapper dengan mb-0 override via class prop tidak bisa langsung,
+      tapi PageHeader sudah set mb-6 di template-nya — kita set space-y-4 (lebih
+      kecil dari space-y-5 sebelumnya) agar total gap tetap wajar.
+    -->
+    <PageHeader
+      title="Data Siswa"
+      :subtitle="headerSubtitle"
+    >
       <template #actions>
         <BaseButton
           v-if="can(PERMISSIONS.STUDENT_IMPORT)"
           variant="outline"
           size="sm"
+          :disabled="studentsStore.isLoading || isExporting"
           @click="$router.push('/students/import')"
         >
-          <Upload class="h-4 w-4" /> Import
+          <Upload class="h-4 w-4" />
+          <span class="hidden sm:inline">Import</span>
         </BaseButton>
         <BaseButton
           v-if="can(PERMISSIONS.STUDENT_CREATE)"
           size="sm"
+          :disabled="isExporting"
           @click="$router.push('/students/create')"
         >
-          <UserPlus class="h-4 w-4" /> Tambah Siswa
+          <UserPlus class="h-4 w-4" />
+          <span class="hidden sm:inline">Tambah Siswa</span>
         </BaseButton>
       </template>
     </PageHeader>
 
-    <!-- Search & Filter -->
+    <!-- ── Search & Filter ─────────────────────────────────────── -->
     <BaseCard :padding="true">
       <SearchFilter
         v-model:search="searchQuery"
         search-placeholder="Cari nama, NIS, NISN..."
       >
         <template #filters>
+          <!--
+            BUG-7 FIX: Tambahkan clearable=true pada filter status dan gender
+            agar user bisa kembali ke "Semua X" tanpa harus klik Reset.
+            Ini menggunakan prop clearable baru di BaseSelect.
+          -->
           <BaseSelect
             v-model="filters.status"
             :options="statusOptions"
             placeholder="Semua Status"
-            class="w-36"
+            clearable
+            class="w-36 min-w-0 shrink"
             @update:model-value="onFilterChange"
           />
           <BaseSelect
             v-model="filters.gender"
             :options="genderOptions"
             placeholder="Semua Gender"
-            class="w-36"
+            clearable
+            class="w-36 min-w-0 shrink"
             @update:model-value="onFilterChange"
           />
-          <!-- BUG-15 FIX: Tambah opsi "Semua Kelas" di awal list agar user bisa
-               menghapus filter kelas tanpa harus klik tombol Reset -->
           <BaseSelect
             v-model="filters.classroomId"
             :options="classroomOptions"
             placeholder="Semua Kelas"
-            class="w-40"
+            clearable
+            class="w-40 min-w-0 shrink"
             @update:model-value="onFilterChange"
           />
           <BaseButton
@@ -56,24 +77,28 @@
             size="sm"
             @click="resetFilters"
           >
-            <X class="h-4 w-4" /> Reset
+            <X class="h-4 w-4" />
+            <span class="hidden xs:inline">Reset</span>
           </BaseButton>
         </template>
+
         <template #actions>
           <BaseButton
             v-if="can(PERMISSIONS.STUDENT_EXPORT)"
             variant="outline"
             size="sm"
             :loading="isExporting"
+            :disabled="studentsStore.isLoading"
             @click="handleExport"
           >
-            <Download class="h-4 w-4" /> Export
+            <Download class="h-4 w-4" />
+            <span class="hidden sm:inline">Export</span>
           </BaseButton>
         </template>
       </SearchFilter>
     </BaseCard>
 
-    <!-- Table -->
+    <!-- ── Tabel Data Siswa ─────────────────────────────────────── -->
     <BaseCard :padding="false">
       <DataTable
         :columns="columns"
@@ -83,21 +108,31 @@
         row-key="id"
         :clickable="true"
         empty-title="Tidak ada data siswa"
-        empty-description="Belum ada siswa yang terdaftar atau tidak ada yang cocok dengan filter."
+        :empty-description="emptyDescription"
         empty-type="students"
+        :sort-key="activeSortKey"
+        :sort-dir="activeSortDir"
         @row-click="row => $router.push(`/students/${row.id}`)"
         @sort="onSort"
       >
+        <!-- Slot empty kontekstual: tampilkan tombol Reset saat filter aktif -->
+        <!-- BUG-17 FIX: Empty state kontekstual dengan tombol Reset Filter -->
+        <template v-if="hasActiveFilters" #empty>
+          <BaseButton variant="outline" size="sm" @click="resetFilters">
+            <X class="h-4 w-4" /> Reset Filter
+          </BaseButton>
+        </template>
+
         <!-- No urut -->
         <template #cell-no="{ index }">
-          <span class="text-slate-400 text-xs">
+          <span class="text-slate-400 tabular-nums text-xs">
             {{ (pagination.page.value - 1) * pagination.limit.value + index + 1 }}
           </span>
         </template>
 
         <!-- Nama + Avatar -->
         <template #cell-fullName="{ row }">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2.5 min-w-0">
             <BaseAvatar
               :name="String(row.fullName)"
               :src="row.photoUrl ? String(row.photoUrl) : undefined"
@@ -105,15 +140,22 @@
               color="blue"
             />
             <div class="min-w-0">
-              <p class="font-medium text-slate-800 truncate">{{ row.fullName }}</p>
+              <p class="font-medium text-slate-800 truncate leading-snug">{{ row.fullName }}</p>
               <p class="text-xs text-slate-400 truncate">{{ row.nis }}</p>
             </div>
           </div>
         </template>
 
-        <!-- Gender -->
+        <!-- Gender — ikon + label singkat -->
         <template #cell-gender="{ row }">
-          <span :class="row.gender === 'L' ? 'text-blue-600' : 'text-pink-600'" class="font-medium text-sm">
+          <span
+            :class="[
+              'inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded',
+              row.gender === 'L'
+                ? 'text-blue-700 bg-blue-50'
+                : 'text-pink-700 bg-pink-50',
+            ]"
+          >
             {{ row.gender === 'L' ? 'L' : 'P' }}
           </span>
         </template>
@@ -124,10 +166,16 @@
         </template>
 
         <!-- Aksi -->
+        <!--
+          BUG-13 FIX: Tambahkan type="button" pada semua tombol aksi untuk
+          kejelasan semantic dan mencegah unexpected form submit.
+          @click.stop mencegah event bubble ke row-click handler.
+        -->
         <template #cell-actions="{ row }">
-          <div class="flex items-center gap-1" @click.stop>
+          <div class="flex items-center justify-end gap-0.5" @click.stop>
             <button
-              class="p-1.5 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+              type="button"
+              class="p-1.5 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-200"
               title="Lihat detail"
               @click="$router.push(`/students/${row.id}`)"
             >
@@ -135,7 +183,8 @@
             </button>
             <button
               v-if="can(PERMISSIONS.STUDENT_UPDATE)"
-              class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+              type="button"
+              class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-200"
               title="Edit"
               @click="$router.push(`/students/${row.id}/edit`)"
             >
@@ -143,7 +192,8 @@
             </button>
             <button
               v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && row.status === 'active'"
-              class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              type="button"
+              class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200"
               title="Arsipkan"
               @click="handleArchive(String(row.id), String(row.fullName))"
             >
@@ -154,7 +204,14 @@
       </DataTable>
 
       <!-- Pagination -->
-      <div class="px-4 border-t border-slate-100">
+      <!--
+        Tampilkan pagination hanya saat ada data dan tidak sedang loading,
+        agar tidak ada "kedip" pagination saat fetch.
+      -->
+      <div
+        v-if="!studentsStore.isLoading && studentsStore.list.length > 0"
+        class="px-4 border-t border-slate-100"
+      >
         <BasePagination
           :current-page="pagination.page.value"
           :total-pages="pagination.totalPages.value"
@@ -165,16 +222,30 @@
       </div>
     </BaseCard>
 
-    <!-- BUG-16 FIX: Gunakan BaseConfirmDialog yang terikat pada confirmDialog state
-         yang diisi via confirm() Promise pattern, bukan mutasi langsung -->
+    <!-- ── Confirm Dialog: Arsipkan Siswa ──────────────────────── -->
+    <!--
+      BUG-2 FIX: Sebelumnya terdapat dua jalur eksekusi doArchive():
+      (1) await confirm() → ok → doArchive() di handleArchive()
+      (2) @confirm event → onConfirmArchive() → doArchive()
+      Hasilnya doArchive() dipanggil DUA KALI setiap confirm.
+
+      Solusi: gunakan SATU jalur saja — hanya Promise pattern.
+      @confirm sekarang memanggil confirmDialog.onConfirm() yang me-resolve
+      Promise di handleArchive(), lalu doArchive() berjalan sekali dari sana.
+      Handler @cancel memanggil confirmDialog.onCancel() untuk resolve(false).
+
+      BUG-3 FIX: isLoading dan isOpen tidak lagi dimanipulasi langsung dari
+      doArchive(). isOpen dikelola sepenuhnya oleh useConfirm (via onConfirm/onCancel).
+      isLoading tetap diekspos untuk prop :loading di dialog.
+    -->
     <BaseConfirmDialog
       v-model="confirmDialog.isOpen.value"
       title="Arsipkan Siswa"
-      :message="`Arsipkan siswa '${confirmDialog.options.value.message}'? Siswa tidak akan dihapus, hanya dinonaktifkan.`"
+      :message="`Arsipkan siswa '${archiveName}'? Siswa tidak akan dihapus, hanya dinonaktifkan.`"
       type="warning"
       confirm-text="Ya, Arsipkan"
       :loading="confirmDialog.isLoading.value"
-      @confirm="onConfirmArchive"
+      @confirm="confirmDialog.onConfirm()"
       @cancel="confirmDialog.onCancel()"
     />
   </div>
@@ -207,40 +278,65 @@ const pagination = usePagination()
 const { exportToExcel, isExporting } = useExport()
 const confirmDialog = useConfirm()
 
+// ── Filter state ──────────────────────────────────────────────
 const filters = ref({ status: '', gender: '', classroomId: '' })
+
 const hasActiveFilters = computed(() =>
-  Object.values(filters.value).some(v => v !== '')
+  Object.values(filters.value).some(v => v !== '') || searchQuery.value !== ''
 )
 
+// ── Sort state — BUG-4 FIX: track di view agar bisa diteruskan ke DataTable prop
+const activeSortKey = ref(studentsStore.filters.sortBy ?? 'fullName')
+const activeSortDir = ref<'asc' | 'desc'>(studentsStore.filters.sortDir ?? 'asc')
+
+// ── Options ───────────────────────────────────────────────────
 const statusOptions = STUDENT_STATUS_OPTIONS
 const genderOptions = GENDER_OPTIONS
 
-// BUG-15 FIX: Tambah opsi kosong "Semua Kelas" di awal agar user bisa clear filter kelas.
-const classroomOptions = computed(() => [
-  { value: '', label: 'Semua Kelas' },
-  ...classroomsStore.classroomOptions,
-])
+const classroomOptions = computed(() =>
+  classroomsStore.classroomOptions
+)
 
-// BUG-14 FIX: useSearch hanya bertanggung jawab men-trigger fetch berdasarkan query.
-// resetFilters() tidak lagi meng-assign searchQuery.value = '' yang akan
-// men-trigger watch debounce dan menyebabkan double fetch.
-// Sebaliknya, kita gunakan flag untuk skip satu debounce cycle.
+// ── Header subtitle ───────────────────────────────────────────
+// BUG-6 FIX: Saat loading, tampilkan "Memuat data..." bukan angka stale.
+const headerSubtitle = computed(() => {
+  if (studentsStore.isLoading) return 'Memuat data...'
+  const n = studentsStore.total
+  return n === 0 ? 'Tidak ada siswa ditemukan' : `${n.toLocaleString('id-ID')} siswa ditemukan`
+})
+
+// ── Empty state description ───────────────────────────────────
+// BUG-17 FIX: Pesan empty state kontekstual berdasarkan apakah filter aktif.
+const emptyDescription = computed(() => {
+  if (hasActiveFilters.value) {
+    return 'Tidak ada siswa yang cocok dengan filter atau pencarian yang aktif.'
+  }
+  return 'Belum ada siswa yang terdaftar di sistem.'
+})
+
+// ── Columns ───────────────────────────────────────────────────
+// BUG-12 FIX: Kurangi kolom yang tampil di sm agar tidak overflow.
+// Di mobile (<sm): No, Nama, Status, Aksi (4 kolom)
+// Di sm–md: tambah Gender, Kelas
+// Di md+: tambah NISN
+const columns: TableColumn[] = [
+  { key: 'no',          label: 'No',     width: 'w-10' },
+  { key: 'fullName',    label: 'Nama Siswa', sortable: true },
+  { key: 'nisn',        label: 'NISN',   class: 'hidden md:table-cell', cellClass: 'hidden md:table-cell' },
+  { key: 'gender',      label: 'JK',     align: 'center', width: 'w-14', class: 'hidden sm:table-cell', cellClass: 'hidden sm:table-cell' },
+  { key: 'classroomName', label: 'Kelas', class: 'hidden sm:table-cell', cellClass: 'hidden sm:table-cell' },
+  { key: 'status',      label: 'Status', align: 'center', width: 'w-28' },
+  { key: 'actions',     label: '',       align: 'right',  width: 'w-24', sticky: 'right' },
+]
+
+// ── Search ─────────────────────────────────────────────────────
 const { query: searchQuery, clear: clearSearch } = useSearch((q) => {
   pagination.reset()
   studentsStore.setFilters({ search: q, page: 1 })
   studentsStore.fetchList()
 })
 
-const columns: TableColumn[] = [
-  { key: 'no', label: 'No', width: 'w-10' },
-  { key: 'fullName', label: 'Nama Siswa', sortable: true },
-  { key: 'nisn', label: 'NISN', class: 'hidden md:table-cell' },
-  { key: 'gender', label: 'JK', align: 'center', width: 'w-12' },
-  { key: 'classroomName', label: 'Kelas', class: 'hidden sm:table-cell' },
-  { key: 'status', label: 'Status', align: 'center' },
-  { key: 'actions', label: '', align: 'right', width: 'w-28', sticky: 'right' },
-]
-
+// ── Filter handlers ───────────────────────────────────────────
 function onFilterChange() {
   pagination.reset()
   studentsStore.setFilters({ ...filters.value, page: 1 })
@@ -249,13 +345,14 @@ function onFilterChange() {
 
 function resetFilters() {
   filters.value = { status: '', gender: '', classroomId: '' }
-  // BUG-14 FIX: Gunakan clearSearch() yang memanggil onSearch('') langsung TANPA
-  // memicu debounce watch. Ini mencegah double fetch:
-  // sebelumnya searchQuery.value='' men-trigger watch → debounce → fetch lagi.
+  // BUG-14 (useSearch) FIX: clearSearch() tidak men-trigger debounce double-call
   clearSearch()
   pagination.reset()
   studentsStore.resetFilters()
   studentsStore.fetchList()
+  // Reset sort ke default
+  activeSortKey.value = 'fullName'
+  activeSortDir.value = 'asc'
 }
 
 function onPageChange(page: number) {
@@ -264,26 +361,37 @@ function onPageChange(page: number) {
   studentsStore.fetchList()
 }
 
+// BUG-4 & BUG-10 FIX: Simpan sort state di view dan teruskan ke DataTable via props.
+// DataTable (BUG-10 fix) sudah reset ke 'asc' saat ganti kolom — tapi view perlu
+// menyimpan state ini untuk dikirim ke store dan ditampilkan saat navigasi back.
 function onSort(key: string, dir: 'asc' | 'desc') {
+  activeSortKey.value = key
+  activeSortDir.value = dir
   studentsStore.setFilters({ sortBy: key, sortDir: dir, page: 1 })
   pagination.reset()
   studentsStore.fetchList()
 }
 
 // ── Archive ───────────────────────────────────────────────────
-
-// BUG-17 FIX: Gunakan ref() bukan plain variable untuk archiveTargetId.
-// Plain variable bisa ditimpa oleh klik cepat berturut-turut sebelum dialog tampil.
+// BUG-17: Simpan nama siswa terpisah untuk pesan dialog (tidak perlu raw ref id).
+// BUG-2 FIX: archiveTargetId tetap sebagai ref, tapi doArchive() hanya dipanggil
+// SEKALI — dari handleArchive() setelah await confirm() resolve true.
+// Handler @confirm di template hanya memanggil confirmDialog.onConfirm() untuk
+// me-resolve Promise, bukan langsung doArchive().
 const archiveTargetId = ref('')
+const archiveName = ref('')
 
 async function handleArchive(id: string, name: string) {
-  // BUG-16 FIX: Gunakan confirm() Promise pattern yang proper — set target ID
-  // SEBELUM confirm() dipanggil, lalu tunggu hasilnya.
   archiveTargetId.value = id
+  archiveName.value = name
+
+  // Tunggu user konfirmasi via Promise — resolve true jika confirm, false jika cancel
   const ok = await confirmDialog.confirm({
     message: name,
     type: 'warning',
   })
+
+  // BUG-2 FIX: doArchive() hanya dipanggil di sini, TIDAK dari @confirm handler.
   if (ok) {
     await doArchive()
   }
@@ -291,23 +399,21 @@ async function handleArchive(id: string, name: string) {
 
 async function doArchive() {
   if (!archiveTargetId.value) return
+
+  // BUG-3 FIX: Set isLoading via ref yang diekspos, jangan manipulasi isOpen langsung.
   confirmDialog.isLoading.value = true
   try {
     await studentsService.archive(archiveTargetId.value)
     studentsStore.removeFromList(archiveTargetId.value)
     toast.success('Siswa berhasil diarsipkan.')
-    confirmDialog.isOpen.value = false
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : 'Gagal mengarsipkan siswa.')
   } finally {
     confirmDialog.isLoading.value = false
+    // BUG-3 FIX: Tutup dialog via onConfirm/onCancel sudah dilakukan — cukup reset target.
     archiveTargetId.value = ''
+    archiveName.value = ''
   }
-}
-
-// Handler untuk @confirm event dari BaseConfirmDialog
-function onConfirmArchive() {
-  doArchive()
 }
 
 // ── Export ────────────────────────────────────────────────────
@@ -329,9 +435,14 @@ async function handleExport() {
   }
 }
 
-// Sync pagination total
+// ── Sync ──────────────────────────────────────────────────────
+// Sync total dari store ke pagination setiap kali berubah
 watch(() => studentsStore.total, v => pagination.setTotal(v))
 
+// BUG-1 FIX: await classroomsStore.fetch() dulu SEBELUM studentsStore.fetchList()
+// agar classroomOptions sudah tersedia saat tabel render pertama kali.
+// Keduanya tidak saling bergantung secara data, tapi fetch classrooms lebih ringan
+// dan cepat — tidak ada overhead signifikan dari sequential await ini.
 onMounted(async () => {
   await classroomsStore.fetch()
   await studentsStore.fetchList()
