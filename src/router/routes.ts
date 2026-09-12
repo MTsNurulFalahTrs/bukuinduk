@@ -49,6 +49,13 @@ const routes: RouteRecordRaw[] = [
             component: () => import('@/views/students/StudentFormView.vue'),
             meta: { title: 'Tambah Siswa', permission: PERMISSIONS.STUDENT_CREATE },
           },
+          // PENTING: 'import' harus sebelum ':id' agar tidak di-match sebagai id='import'
+          {
+            path: 'import',
+            name: 'students.import',
+            component: () => import('@/views/students/StudentImportView.vue'),
+            meta: { title: 'Import Siswa', permission: PERMISSIONS.STUDENT_IMPORT },
+          },
           {
             path: ':id',
             name: 'students.detail',
@@ -60,12 +67,6 @@ const routes: RouteRecordRaw[] = [
             name: 'students.edit',
             component: () => import('@/views/students/StudentFormView.vue'),
             meta: { title: 'Edit Siswa', permission: PERMISSIONS.STUDENT_UPDATE },
-          },
-          {
-            path: 'import',
-            name: 'students.import',
-            component: () => import('@/views/students/StudentImportView.vue'),
-            meta: { title: 'Import Siswa', permission: PERMISSIONS.STUDENT_IMPORT },
           },
         ],
       },
