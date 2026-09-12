@@ -3,12 +3,14 @@
     :class="[
       'relative inline-flex items-center justify-center rounded-full shrink-0 overflow-hidden',
       sizeClass,
-      !src ? colorClass : 'bg-slate-200',
+      showImage ? 'bg-slate-200' : colorClass,
     ]"
   >
+    <!-- BUG-14 FIX: Tampilkan gambar hanya jika src ada DAN belum error load.
+         Saat gambar 404/gagal, imgError=true → fallback ke initials ditampilkan. -->
     <img
-      v-if="src"
-      :src="src"
+      v-if="showImage"
+      :src="src!"
       :alt="name ?? 'Avatar'"
       class="h-full w-full object-cover"
       @error="imgError = true"
@@ -23,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { initials } from '@/utils'
 
 interface Props {
@@ -39,6 +41,13 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const imgError = ref(false)
+
+// BUG-14 FIX: showImage hanya true jika src ada DAN belum error.
+// Sebelumnya: v-if="src" tidak berubah saat imgError=true — tetap render <img> broken.
+const showImage = computed(() => Boolean(props.src) && !imgError.value)
+
+// Reset imgError saat src prop berubah ke URL baru
+watch(() => props.src, () => { imgError.value = false })
 
 const sizeClass = computed(() => ({
   xs: 'h-6 w-6',
