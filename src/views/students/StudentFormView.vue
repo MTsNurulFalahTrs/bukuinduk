@@ -78,7 +78,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
           <BaseInput v-model="form.entryDate" label="Tanggal Masuk" type="date" required :error-message="errors.entryDate" />
           <BaseSelect v-model="form.schoolYearId" label="Tahun Pelajaran" :options="schoolYearStore.schoolYearOptions" placeholder="Pilih tahun pelajaran" />
-          <BaseSelect v-model="form.classroomId" label="Kelas" :options="classroomsStore.classroomOptions" placeholder="Pilih kelas" />
+          <BaseSelect v-model="form.classroomId" label="Kelas" :options="filteredClassroomOptions" placeholder="Pilih kelas" />
           <BaseInput v-model="form.educationHistory.schoolName" label="Asal Sekolah" placeholder="Nama sekolah sebelumnya" />
           <BaseSelect v-model="form.educationHistory.level" label="Jenjang Sekolah Asal" :options="PREVIOUS_SCHOOL_LEVEL_OPTIONS" placeholder="Pilih jenjang" />
           <BaseInput v-model="form.educationHistory.certificateNumber" label="Nomor Ijazah" placeholder="Opsional" />
@@ -158,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CheckCircle, ChevronRight, ChevronLeft, Save } from 'lucide-vue-next'
 import { PageHeader } from '@/components/shared'
@@ -221,6 +221,29 @@ const form = reactive<Record<string, any>>({
   health: { bloodType: '', heightCm: undefined, weightKg: undefined, specialNeeds: '', healthNotes: '', allergies: '' },
 })
 
+/**
+ * Bug 2 & 3 FIX: Dropdown kelas difilter berdasarkan schoolYearId yang dipilih.
+ * - Jika schoolYearId belum dipilih, tampilkan semua kelas (fallback).
+ * - Computed ini reaktif — berubah otomatis saat form.schoolYearId berubah.
+ * - classroomsStore.getOptionsForYear() menyaring list yang sudah di-cache di
+ *   store tanpa request ulang ke backend.
+ */
+const filteredClassroomOptions = computed(() =>
+  classroomsStore.getOptionsForYear(form.schoolYearId)
+)
+
+/**
+ * Bug 3 FIX: Saat user memilih tahun pelajaran berbeda, reset pilihan kelas
+ * agar tidak ada kelas dari tahun lama yang tertinggal di form.value.classroomId.
+ * Hanya reset jika classroomId yang ada bukan bagian dari opsi baru.
+ */
+watch(() => form.schoolYearId, (newYearId, oldYearId) => {
+  if (!oldYearId || newYearId === oldYearId) return
+  const newOptions = classroomsStore.getOptionsForYear(newYearId)
+  const stillValid = newOptions.some(o => o.value === form.classroomId)
+  if (!stillValid) form.classroomId = ''
+})
+
 async function handleSubmit() {
   Object.keys(errors).forEach(k => delete errors[k])
   errorMsg.value = ''
@@ -255,10 +278,17 @@ async function handleSubmit() {
 }
 
 onMounted(async () => {
+  // Fetch classrooms tanpa schoolYearId dulu — semua kelas masuk ke store.
+  // Setelah mount, filteredClassroomOptions akan reaktif menyaring per schoolYearId.
   await Promise.all([
     classroomsStore.fetch(),
     schoolYearStore.fetch(),
   ])
+
+  // Default schoolYearId ke tahun aktif jika form kosong (mode create)
+  if (!isEdit.value && !form.schoolYearId) {
+    form.schoolYearId = schoolYearStore.activeSchoolYear?.id ?? ''
+  }
 
   if (isEdit.value) {
     const student = await studentsStore.fetchDetail(route.params.id as string)
