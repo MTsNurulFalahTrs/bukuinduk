@@ -16,10 +16,12 @@
     </div>
     <button
       v-if="dismissible"
-      class="shrink-0 p-0.5 rounded opacity-60 hover:opacity-100 transition-opacity"
-      @click="visible = false"
+      type="button"
+      aria-label="Tutup notifikasi"
+      class="shrink-0 p-0.5 rounded opacity-60 hover:opacity-100 focus:outline-none focus:opacity-100 transition-opacity"
+      @click="dismiss"
     >
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
       </svg>
     </button>
@@ -43,7 +45,24 @@ const props = withDefaults(defineProps<Props>(), {
   dismissible: false,
 })
 
+/**
+ * BUG-3 FIX: Tambahkan emit 'dismiss' agar parent dapat bereaksi saat user
+ * menutup alert — misal mereset errorMsg sehingga :key berubah dan komponen
+ * di-remount dengan `visible = true` ketika error baru muncul.
+ *
+ * Pola di LoginView: <BaseAlert :key="errorMsg" @dismiss="errorMsg = ''" />
+ * Setiap kali errorMsg berubah ke nilai baru, komponen di-remount → visible
+ * kembali true. Saat dismiss ditekan, errorMsg di-reset ke '' → v-if="errorMsg"
+ * menjadi false → komponen unmount sepenuhnya.
+ */
+const emit = defineEmits<{ dismiss: [] }>()
+
 const visible = ref(true)
+
+function dismiss() {
+  visible.value = false
+  emit('dismiss')
+}
 
 const variantClasses = computed(() => ({
   success: 'bg-green-50 border-green-200 text-green-800',
