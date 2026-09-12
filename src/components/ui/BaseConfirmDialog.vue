@@ -5,7 +5,7 @@
     size="sm"
     :show-close="false"
     :close-on-backdrop="false"
-    @update:model-value="$emit('update:modelValue', $event)"
+    @update:model-value="onBackdropClose"
   >
     <div class="flex gap-4 items-start">
       <div :class="['p-2 rounded-full shrink-0', iconBg]">
@@ -18,7 +18,14 @@
 
     <template #footer>
       <div class="flex gap-3 justify-end">
-        <BaseButton variant="outline" size="sm" @click="$emit('update:modelValue', false)">
+        <!--
+          BUG-CONFIRM FIX: Tombol Batal sekarang emit 'cancel' SELAIN
+          update:modelValue, agar @cancel="confirmDialog.onCancel()" di
+          StudentListView dapat merespons dan me-resolve Promise dengan false.
+          Sebelumnya hanya emit update:modelValue → Promise di handleArchive()
+          tidak pernah resolve → hang selamanya.
+        -->
+        <BaseButton variant="outline" size="sm" :disabled="loading" @click="handleCancel">
           {{ cancelText }}
         </BaseButton>
         <BaseButton :variant="confirmVariant" size="sm" :loading="loading" @click="$emit('confirm')">
@@ -54,10 +61,26 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
 })
 
-defineEmits<{
+const emit = defineEmits<{
   'update:modelValue': [v: boolean]
   'confirm': []
+  /** BUG-CONFIRM FIX: Tambahkan event cancel agar parent bisa resolve Promise */
+  'cancel': []
 }>()
+
+function handleCancel() {
+  emit('update:modelValue', false)
+  emit('cancel')
+}
+
+// BUG-CONFIRM FIX: Saat backdrop menutup dialog (jika closeOnBackdrop=true di masa depan),
+// tetap emit cancel agar Promise selalu resolve dan tidak leak.
+function onBackdropClose(val: boolean) {
+  if (!val) {
+    emit('update:modelValue', false)
+    emit('cancel')
+  }
+}
 
 const icon = computed(() => ({
   danger: Trash2,
