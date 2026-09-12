@@ -412,7 +412,17 @@ const mobileNavItems = computed(() => {
 // path yang dibandingkan adalah path yang spesifik (bukan prefix umum seperti '/').
 function isActive(path: string): boolean {
   if (path === '/') return route.path === '/'
-  return route.path === path || route.path.startsWith(path + '/')
+  // Exact match selalu aktif
+  if (route.path === path) return true
+  // Untuk sub-path: aktif jika berada di bawah path ini,
+  // KECUALI path tersebut adalah prefix dari nav item lain yang lebih spesifik.
+  // Contoh: /classrooms aktif untuk /classrooms/123 tapi TIDAK untuk /classrooms/grades
+  // karena /classrooms/grades punya nav item sendiri.
+  const moreSpecificNavExists = navItems.some(
+    item => item.to !== path && item.to.startsWith(path + '/') && route.path.startsWith(item.to)
+  )
+  if (moreSpecificNavExists) return false
+  return route.path.startsWith(path + '/')
 }
 
 async function handleLogout() {
