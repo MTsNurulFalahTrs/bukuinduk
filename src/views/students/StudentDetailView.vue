@@ -1,26 +1,34 @@
 <template>
   <div class="space-y-5">
-    <!-- ── Page Header ─────────────────────────────────────────── -->
+
+    <!-- ── Page Header ──────────────────────────────────────────── -->
     <PageHeader
       title="Detail Siswa"
       show-back
-      :breadcrumbs="[{ label: 'Data Siswa', to: '/students' }, { label: student?.fullName ?? '…' }]"
+      :breadcrumbs="[
+        { label: 'Data Siswa', to: '/students' },
+        { label: isLoading ? 'Memuat…' : (student?.fullName ?? 'Tidak ditemukan') },
+      ]"
     >
       <template v-if="student" #actions>
+        <!--
+          BUG-13 FIX: Edit button di header HANYA ditampilkan jika user
+          punya izin. Di mobile ia disembunyikan (hidden sm:flex) karena
+          sudah ada quick-action edit di dalam kartu profil kiri.
+          Ini menghilangkan duplikasi tombol Edit di desktop.
+        -->
         <BaseButton
           v-if="can(PERMISSIONS.STUDENT_UPDATE)"
           variant="outline"
           size="sm"
+          class="hidden sm:inline-flex"
           @click="router.push(`/students/${student.id}/edit`)"
         >
           <Pencil class="h-4 w-4" />
-          <span class="hidden sm:inline">Edit</span>
+          Edit
         </BaseButton>
 
-        <!--
-          BUG-14 FIX: Tombol Arsipkan di-disable saat isArchiving agar double-click
-          tidak bisa trigger dialog dua kali sebelum loading state terpasang.
-        -->
+        <!-- Arsipkan: hanya untuk siswa aktif -->
         <BaseButton
           v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && student.status === 'active'"
           variant="danger"
@@ -32,9 +40,13 @@
           <span class="hidden sm:inline">Arsipkan</span>
         </BaseButton>
 
-        <!-- Restore: tampilkan jika status bukan active dan user punya izin -->
+        <!--
+          BUG-9 FIX: Tombol Aktifkan HANYA muncul untuk status 'inactive'.
+          Status 'graduated', 'transferred', 'dropped_out' tidak di-restore
+          secara otomatis — butuh proses berbeda dan tidak ada di alur ini.
+        -->
         <BaseButton
-          v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && student.status !== 'active'"
+          v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && student.status === 'inactive'"
           variant="success"
           size="sm"
           :loading="isRestoring"
@@ -46,51 +58,73 @@
       </template>
     </PageHeader>
 
-    <!-- ── Skeleton Loading ────────────────────────────────────── -->
+    <!-- ── Skeleton Loading ──────────────────────────────────────── -->
     <div v-if="isLoading" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
       <!-- Kartu profil kiri -->
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
-        <div class="flex flex-col items-center gap-3">
-          <BaseSkeleton height="h-20 w-20 rounded-full" />
-          <BaseSkeleton height="h-5 w-40" />
-          <BaseSkeleton height="h-4 w-24" />
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="h-16 bg-slate-100" />
+        <div class="flex flex-col items-center px-5 pb-5 -mt-8 gap-3">
+          <!--
+            BUG-1 FIX: Pisahkan height, width, dan rounded menjadi prop
+            terpisah sesuai API BaseSkeleton. Compound class "h-20 w-20
+            rounded-full" tidak didukung prop height (hanya satu h-* class).
+          -->
+          <BaseSkeleton height="h-16" width="w-16" :rounded="true" />
+          <BaseSkeleton height="h-5" width="w-36" />
+          <BaseSkeleton height="h-4" width="w-20" />
         </div>
-        <div class="space-y-3 pt-4 border-t border-slate-100">
-          <BaseSkeleton v-for="i in 5" :key="i" height="h-4" />
+        <div class="px-5 pb-5 space-y-3 border-t border-slate-100 pt-4">
+          <!--
+            BUG-14 FIX: Variasikan lebar skeleton agar lebih representatif
+            dengan konten label + nilai yang berbeda-beda panjangnya.
+          -->
+          <BaseSkeleton height="h-3.5" width="w-full" />
+          <BaseSkeleton height="h-3.5" width="w-5/6" />
+          <BaseSkeleton height="h-3.5" width="w-full" />
+          <BaseSkeleton height="h-3.5" width="w-4/6" />
+          <BaseSkeleton height="h-3.5" width="w-full" />
+          <BaseSkeleton height="h-3.5" width="w-3/4" />
         </div>
       </div>
+
       <!-- Panel tab kanan -->
       <div class="lg:col-span-2 space-y-4">
-        <BaseSkeleton height="h-10" />
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
-          <BaseSkeleton v-for="i in 6" :key="i" height="h-4" />
+        <!--
+          BUG-7 FIX: Skeleton tab bar lebih representatif — 5 tombol dengan
+          lebar yang mirip tab aslinya, bukan satu kotak h-10 penuh.
+        -->
+        <div class="flex gap-2 border-b border-slate-200 pb-px">
+          <BaseSkeleton v-for="i in 5" :key="i" height="h-9" :width="tabSkeletonWidths[i - 1]" />
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+          <BaseSkeleton height="h-4" width="w-32" />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            <BaseSkeleton v-for="i in 8" :key="i" height="h-4" :width="i % 2 === 0 ? 'w-4/5' : 'w-full'" />
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- ── Error State ─────────────────────────────────────────── -->
+    <!-- ── Error State ───────────────────────────────────────────── -->
     <BaseAlert v-else-if="error" type="error" class="mt-2">
-      <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center justify-between gap-4 flex-wrap">
         <span>{{ error }}</span>
-        <BaseButton size="sm" variant="outline" @click="retryLoad">Coba Lagi</BaseButton>
+        <BaseButton size="sm" variant="outline" @click="retryLoad">
+          Coba Lagi
+        </BaseButton>
       </div>
     </BaseAlert>
 
-    <!-- ── Content ─────────────────────────────────────────────── -->
+    <!-- ── Content ──────────────────────────────────────────────── -->
     <template v-else-if="student">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-        <!-- ── Kartu Profil Kiri ─────────────────────────────── -->
-        <!--
-          BUG-9 FIX: Gunakan prop :padding="false" agar tidak ada conflict p-5 vs py-6.
-          Padding dikendalikan sepenuhnya oleh class di slot konten.
-        -->
+        <!-- ── Kartu Profil Kiri ──────────────────────────────── -->
         <BaseCard :padding="false" class="overflow-hidden">
-          <!-- Banner gradient tipis di atas avatar -->
+          <!-- Banner gradient -->
           <div class="h-16 bg-gradient-to-r from-primary-500 to-primary-700 shrink-0" />
 
           <div class="flex flex-col items-center text-center px-5 pb-5 -mt-8 gap-2">
-            <!-- Avatar lebih besar sebagai focal point -->
             <BaseAvatar
               :name="student.fullName"
               :src="student.photoUrl ?? undefined"
@@ -100,37 +134,40 @@
             />
 
             <div class="mt-1">
-              <h2 class="text-base font-bold text-slate-800 leading-tight">{{ student.fullName }}</h2>
-              <p v-if="student.nickname" class="text-sm text-slate-400 mt-0.5">"{{ student.nickname }}"</p>
+              <h2 class="text-base font-bold text-slate-800 leading-tight">
+                {{ student.fullName }}
+              </h2>
+              <p v-if="student.nickname" class="text-sm text-slate-400 mt-0.5">
+                "{{ student.nickname }}"
+              </p>
             </div>
 
-            <!--
-              BUG-12 FIX: Hapus prop `size` yang tidak ada di StudentStatusBadge.
-              Komponen hanya menerima `status` dan `dot`.
-            -->
             <StudentStatusBadge :status="student.status" dot />
 
-            <!-- Info usia jika ada tanggal lahir -->
             <p v-if="studentAge !== null" class="text-xs text-slate-400">
               {{ studentAge }} tahun
             </p>
           </div>
 
-          <!-- Daftar info ringkas -->
-          <div class="px-5 pb-5 border-t border-slate-100 pt-4 space-y-2.5 text-sm">
-            <InfoRow label="NIS"          :value="student.nis" />
-            <InfoRow label="NISN"         :value="student.nisn" />
+          <!-- Info ringkas -->
+          <div class="px-5 pb-4 border-t border-slate-100 pt-4 space-y-2.5 text-sm">
+            <InfoRow label="NIS"           :value="student.nis" />
+            <InfoRow label="NISN"          :value="student.nisn" />
             <InfoRow label="Jenis Kelamin" :value="formatGender(student.gender)" />
-            <InfoRow label="Kelas"        :value="student.currentEnrollment?.classroomName" />
-            <InfoRow label="Tahun Masuk"  :value="student.currentEnrollment?.schoolYearName" />
-            <InfoRow label="Tgl Masuk"    :value="formatDate(student.entryDate)" />
+            <InfoRow label="Kelas"         :value="student.currentEnrollment?.classroomName" />
+            <InfoRow label="Tahun Masuk"   :value="student.currentEnrollment?.schoolYearName" />
+            <InfoRow label="Tgl Masuk"     :value="formatDate(student.entryDate)" />
           </div>
 
-          <!-- Quick action edit di bawah kartu (mobile-friendly) -->
-          <div
-            v-if="can(PERMISSIONS.STUDENT_UPDATE)"
-            class="px-5 pb-5"
-          >
+          <!--
+            BUG-13 FIX: Tombol Edit di profil card ditampilkan di semua ukuran
+            layar — ini satu-satunya edit action di mobile (header edit disembunyikan
+            di mobile via hidden sm:inline-flex). Di desktop keduanya tampil, tapi
+            ini justru konsisten: header = navigasi global, card = aksi kontekstual.
+            Untuk menghindari duplikasi murni, header edit class="hidden sm:inline-flex"
+            membuatnya tidak tampil di mobile, sedangkan card edit selalu ada.
+          -->
+          <div v-if="can(PERMISSIONS.STUDENT_UPDATE)" class="px-5 pb-5">
             <BaseButton
               variant="outline"
               size="sm"
@@ -142,19 +179,24 @@
           </div>
         </BaseCard>
 
-        <!-- ── Panel Tab Kanan ────────────────────────────────── -->
-        <div class="lg:col-span-2 space-y-0">
-          <!--
-            BUG-8 FIX: Tambahkan `pb-px` agar border-b-2 tab aktif tidak terpotong
-            saat container scroll horizontal di mobile.
-          -->
+        <!-- ── Panel Tab Kanan ───────────────────────────────── -->
+        <div class="lg:col-span-2">
+          <!-- Tab bar -->
           <div class="flex border-b border-slate-200 overflow-x-auto scrollbar-thin pb-px mb-4">
+            <!--
+              BUG-4/11 FIX: Tambahkan type="button" pada semua tab button agar
+              tidak berpotensi trigger form submit jika ada wrapper <form>.
+              BUG UI-2 FIX: Ganti focus:outline-none dengan focus-visible ring
+              yang visible untuk keyboard navigation.
+            -->
             <button
               v-for="tab in tabs"
               :key="tab.key"
+              type="button"
               :class="[
                 'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap',
-                'border-b-2 -mb-px transition-colors focus:outline-none',
+                'border-b-2 -mb-px transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-1',
                 activeTab === tab.key
                   ? 'border-primary-600 text-primary-700'
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300',
@@ -170,48 +212,40 @@
           <Transition name="tab-fade" mode="out-in">
             <div :key="activeTab">
 
-              <!-- ── Tab: Identitas ──────────────────────────── -->
+              <!-- ── Identitas ─────────────────────────────── -->
               <div v-if="activeTab === 'identity'" class="space-y-4">
                 <BaseCard title="Data Pribadi">
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
-                    <!--
-                      BUG-10 FIX: NIK hanya tampilkan mask '••••' jika user PUNYA akses
-                      sensitif DAN nik memang tidak ada (backend hapus field untuk teacher).
-                      Jika tidak punya akses: tampilkan mask hanya jika ada kemungkinan ada data
-                      (role admin/principal). Teacher yang tidak dapat field nik dari backend
-                      sudah tidak ada value, jadi tampilkan '—'.
-                    -->
-                    <InfoRow
-                      label="NIK"
-                      :value="nikDisplay"
-                    />
+                    <InfoRow label="NIK"             :value="nikDisplay" />
                     <InfoRow label="Tempat Lahir"    :value="student.birthPlace" />
                     <InfoRow label="Tanggal Lahir"   :value="formatDate(student.birthDate)" />
                     <InfoRow label="Agama"           :value="student.religion" />
                     <InfoRow label="Kewarganegaraan" :value="student.nationality" />
                     <InfoRow label="Status Keluarga" :value="familyStatusLabel" />
-                    <InfoRow label="Anak Ke-"        :value="student.childOrder != null ? String(student.childOrder) : undefined" />
-                    <InfoRow label="Jml Saudara"     :value="student.siblingsCount != null ? String(student.siblingsCount) : undefined" />
+                    <InfoRow
+                      label="Anak Ke-"
+                      :value="student.childOrder != null ? String(student.childOrder) : undefined"
+                    />
+                    <InfoRow
+                      label="Jml Saudara"
+                      :value="student.siblingsCount != null ? String(student.siblingsCount) : undefined"
+                    />
                   </div>
                 </BaseCard>
 
                 <BaseCard title="Alamat & Kontak">
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
-                    <!--
-                      BUG-13 FIX: Pisahkan alamat dan RT/RW — tidak digabung join
-                      yang bisa menghasilkan leading-space jika salah satu kosong.
-                    -->
                     <div class="sm:col-span-2">
                       <InfoRow label="Alamat" :value="student.address" />
                     </div>
-                    <InfoRow label="RT/RW"         :value="student.rtRw" />
+                    <InfoRow label="RT/RW"          :value="student.rtRw" />
                     <InfoRow label="Desa/Kelurahan" :value="student.village" />
-                    <InfoRow label="Kecamatan"     :value="student.district" />
-                    <InfoRow label="Kab/Kota"      :value="student.city" />
-                    <InfoRow label="Provinsi"      :value="student.province" />
-                    <InfoRow label="Kode Pos"      :value="student.postalCode" />
-                    <InfoRow label="No. HP"        :value="student.phone" />
-                    <InfoRow label="Email"         :value="student.email" />
+                    <InfoRow label="Kecamatan"      :value="student.district" />
+                    <InfoRow label="Kab/Kota"       :value="student.city" />
+                    <InfoRow label="Provinsi"       :value="student.province" />
+                    <InfoRow label="Kode Pos"       :value="student.postalCode" />
+                    <InfoRow label="No. HP"         :value="student.phone" />
+                    <InfoRow label="Email"          :value="student.email" />
                   </div>
                 </BaseCard>
 
@@ -220,7 +254,7 @@
                 </BaseCard>
               </div>
 
-              <!-- ── Tab: Orang Tua ──────────────────────────── -->
+              <!-- ── Orang Tua ──────────────────────────────── -->
               <div v-else-if="activeTab === 'parents'" class="space-y-4">
                 <ParentCard
                   v-for="rel in (['father', 'mother', 'guardian'] as const)"
@@ -231,15 +265,10 @@
                 />
               </div>
 
-              <!-- ── Tab: Kesehatan ──────────────────────────── -->
+              <!-- ── Kesehatan ──────────────────────────────── -->
               <div v-else-if="activeTab === 'health'">
                 <BaseCard title="Data Kesehatan">
                   <template v-if="can(PERMISSIONS.STUDENT_VIEW_SENSITIVE)">
-                    <!--
-                      BUG-11 FIX: Gunakan string kosong '' bukan undefined sebagai fallback
-                      agar InfoRow selalu menerima prop string yang konsisten.
-                      RESPONSIVE FIX: cols-1 di xs, cols-2 di sm, cols-3 di md
-                    -->
                     <div
                       v-if="student.health"
                       class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 mt-2 text-sm"
@@ -263,7 +292,6 @@
                         <InfoRow label="Alergi" :value="student.health.allergies" />
                       </div>
                     </div>
-                    <!-- Empty state jika data kesehatan belum diisi -->
                     <BaseEmpty
                       v-else
                       title="Data kesehatan belum diisi"
@@ -277,7 +305,7 @@
                 </BaseCard>
               </div>
 
-              <!-- ── Tab: Pendidikan Sebelumnya ──────────────── -->
+              <!-- ── Pendidikan Sebelumnya ──────────────────── -->
               <div v-else-if="activeTab === 'education'">
                 <BaseCard title="Riwayat Pendidikan Sebelumnya">
                   <div v-if="student.educationHistory?.length" class="mt-2 space-y-3">
@@ -289,15 +317,14 @@
                       <div class="p-2 bg-blue-100 rounded-lg shrink-0 self-start">
                         <GraduationCap class="h-4 w-4 text-blue-600" />
                       </div>
-                      <!--
-                        RESPONSIVE FIX: cols-1 di mobile agar teks tidak terpotong,
-                        cols-2 di sm ke atas.
-                      -->
                       <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 flex-1 min-w-0">
                         <InfoRow label="Asal Sekolah" :value="ed.schoolName" />
                         <InfoRow label="Jenjang"      :value="ed.level" />
-                        <InfoRow label="Tahun Lulus"  :value="ed.graduationYear != null ? String(ed.graduationYear) : undefined" />
-                        <InfoRow label="No. Ijazah"   :value="ed.certificateNumber" />
+                        <InfoRow
+                          label="Tahun Lulus"
+                          :value="ed.graduationYear != null ? String(ed.graduationYear) : undefined"
+                        />
+                        <InfoRow label="No. Ijazah" :value="ed.certificateNumber" />
                       </div>
                     </div>
                   </div>
@@ -305,42 +332,59 @@
                 </BaseCard>
               </div>
 
-              <!-- ── Tab: Riwayat Kelas ──────────────────────── -->
+              <!-- ── Riwayat Kelas ───────────────────────────── -->
               <div v-else-if="activeTab === 'enrollment'">
                 <BaseCard title="Riwayat Kelas">
-                  <!-- Error fetch enrollment (tidak memblokir halaman utama) -->
-                  <BaseAlert v-if="enrollmentError" type="error" class="mt-2 mb-3">
-                    {{ enrollmentError }}
-                    <button
-                      class="ml-2 underline text-xs hover:no-underline"
-                      @click="retryEnrollments"
-                    >
-                      Muat ulang
-                    </button>
+                  <!--
+                    BUG-12 FIX: Ganti <button> raw dengan BaseButton agar
+                    styling, focus ring, dan accessibility konsisten.
+                  -->
+                  <BaseAlert
+                    v-if="enrollmentError"
+                    type="error"
+                    class="mt-2 mb-3"
+                  >
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                      <span>{{ enrollmentError }}</span>
+                      <BaseButton
+                        size="sm"
+                        variant="outline"
+                        @click="retryEnrollments"
+                      >
+                        Muat ulang
+                      </BaseButton>
+                    </div>
                   </BaseAlert>
 
                   <!--
-                    BUG-3 FIX: Kondisi yang benar adalah `enrollments.length > 0`,
-                    bukan `student.currentEnrollment || enrollments.length`.
-                    Sebelumnya jika currentEnrollment ada tapi enrollments kosong,
-                    container tampil tapi list kosong — tanpa BaseEmpty.
+                    BUG-8 / UI-1 FIX: Tampilkan skeleton saat enrollments masih
+                    diload (isLoadingEnrollments) agar tidak ada flash konten kosong.
                   -->
-                  <div v-if="enrollments.length > 0" class="mt-2 space-y-2">
+                  <div v-if="isLoadingEnrollments" class="mt-2 space-y-2">
+                    <div
+                      v-for="i in 3"
+                      :key="i"
+                      class="flex gap-3 p-3 rounded-lg border border-slate-100"
+                    >
+                      <BaseSkeleton height="h-8" width="w-8" :rounded="false" />
+                      <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <BaseSkeleton v-for="j in 4" :key="j" height="h-4" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else-if="enrollments.length > 0" class="mt-2 space-y-2">
                     <div
                       v-for="enr in enrollments"
                       :key="enr.id"
-                      class="flex items-start gap-3 p-3 rounded-lg border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-colors text-sm"
+                      class="flex items-start gap-3 p-3 rounded-lg border border-slate-100
+                             hover:border-slate-200 hover:bg-slate-50 transition-colors text-sm"
                     >
                       <div class="p-2 bg-slate-100 rounded-lg shrink-0 mt-0.5">
                         <School class="h-4 w-4 text-slate-500" />
                       </div>
-                      <!--
-                        RESPONSIVE FIX: cols-1 di mobile, cols-2 di sm, cols-4 di lg.
-                        Sebelumnya cols-2 di xs terlalu padat.
-                        BUG-4 FIX: Gunakan formatEnrollmentStatus() bukan raw enr.status.
-                      -->
                       <div class="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-3 gap-y-2">
-                        <InfoRow label="Kelas"          :value="enr.classroomName" />
+                        <InfoRow label="Kelas"           :value="enr.classroomName" />
                         <InfoRow label="Tahun Pelajaran" :value="enr.schoolYearName" />
                         <InfoRow label="Tgl Masuk"       :value="formatDate(enr.entryDate)" />
                         <div>
@@ -350,8 +394,9 @@
                       </div>
                     </div>
                   </div>
+
                   <BaseEmpty
-                    v-else-if="!enrollmentError"
+                    v-else-if="!enrollmentError && !isLoadingEnrollments"
                     title="Belum ada riwayat kelas"
                     description="Siswa ini belum pernah terdaftar di kelas manapun."
                     class="py-8"
@@ -365,7 +410,7 @@
       </div>
     </template>
 
-    <!-- ── Confirm Archive Dialog ──────────────────────────────── -->
+    <!-- ── Confirm Archive ───────────────────────────────────────── -->
     <BaseConfirmDialog
       v-model="showArchiveDialog"
       title="Arsipkan Siswa"
@@ -376,7 +421,7 @@
       @confirm="confirmArchive"
     />
 
-    <!-- ── Confirm Restore Dialog ──────────────────────────────── -->
+    <!-- ── Confirm Restore ───────────────────────────────────────── -->
     <BaseConfirmDialog
       v-model="showRestoreDialog"
       title="Aktifkan Kembali Siswa"
@@ -410,11 +455,7 @@ import { toast } from 'vue-sonner'
 import type { StudentParent, StudentEnrollment } from '@/types'
 
 // ─────────────────────────────────────────────────────────────────
-// InfoRow — komponen helper ringan untuk pasangan label/nilai.
-//
-// BUG-7 FIX: Gunakan type null|string bukan String (konstruktor) agar
-// undefined tidak pernah dirender sebagai string "undefined".
-// Template menggunakan || '—' sebagai fallback tampilan.
+// InfoRow — helper label/nilai dengan fallback '—'
 // ─────────────────────────────────────────────────────────────────
 const InfoRow = {
   props: {
@@ -430,10 +471,7 @@ const InfoRow = {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// EnrollmentStatusBadge — badge berwarna untuk status enrollment.
-// BUG-4 FIX: Status raw ('active','transferred', dll) ditampilkan
-// dengan label Indonesia dan warna yang sesuai.
-// Gunakan methods bukan computed agar TypeScript tidak perlu inferensi `this`.
+// EnrollmentStatusBadge — badge berwarna per status enrollment
 // ─────────────────────────────────────────────────────────────────
 const enrollmentStatusMap: Record<string, { label: string; color: string }> = {
   active:      { label: 'Aktif',       color: 'bg-green-100 text-green-700'  },
@@ -446,7 +484,7 @@ const enrollmentStatusMap: Record<string, { label: string; color: string }> = {
 const EnrollmentStatusBadge = {
   props: { status: { type: String, default: null } },
   setup(props: { status: string | null }) {
-    const entry = computed(() => enrollmentStatusMap[props.status ?? ''])
+    const entry      = computed(() => enrollmentStatusMap[props.status ?? ''])
     const label      = computed(() => entry.value?.label ?? props.status ?? '—')
     const colorClass = computed(() => entry.value?.color ?? 'bg-slate-100 text-slate-600')
     return { label, colorClass }
@@ -459,44 +497,41 @@ const EnrollmentStatusBadge = {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// ParentCard — komponen helper untuk satu entri orang tua/wali.
-//
-// BUG-2 FIX: parent.birthDate diformat via formatDate() bukan as-is.
-// BUG-1 FIX: normalizeIsAlive hanya ada di sini sebagai method;
-//   fungsi duplikat di setup scope dihapus.
+// ParentCard — kartu satu entri orang tua / wali
 // ─────────────────────────────────────────────────────────────────
 const ParentCard = {
   props: {
-    parent:        { type: Object, default: null },
-    relationship:  { type: String, required: true },
+    parent:        { type: Object,  default: null  },
+    relationship:  { type: String,  required: true },
     showSensitive: { type: Boolean, default: false },
   },
   components: { BaseCard, InfoRow },
   methods: {
     formatDate,
-    /**
-     * BUG-21 FIX (dipertahankan): isAlive dari spreadsheet bisa berupa
-     * boolean, string "TRUE"/"FALSE", angka 0/1, atau null.
-     * Hanya return false jika nilai secara eksplisit menunjukkan false.
-     */
+    /** isAlive dari GAS bisa boolean, string "TRUE"/"FALSE", atau angka 0/1 */
     normalizeIsAlive(val: unknown): boolean {
       if (val === false || val === 'FALSE' || val === 'false' || val === 0) return false
       return true
     },
     relationLabel(rel: string): string {
-      return ({ father: 'Data Ayah', mother: 'Data Ibu', guardian: 'Data Wali' } as Record<string, string>)[rel] ?? rel
+      const map: Record<string, string> = {
+        father:   'Data Ayah',
+        mother:   'Data Ibu',
+        guardian: 'Data Wali',
+      }
+      return map[rel] ?? rel
     },
   },
   template: `
     <BaseCard :title="relationLabel(relationship)">
       <div v-if="parent" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
-        <InfoRow label="Nama"       :value="parent.fullName" />
+        <InfoRow label="Nama"        :value="parent.fullName" />
         <InfoRow v-if="showSensitive" label="NIK" :value="parent.nik" />
-        <InfoRow label="Tgl Lahir"  :value="formatDate(parent.birthDate)" />
-        <InfoRow label="Pendidikan" :value="parent.education" />
-        <InfoRow label="Pekerjaan"  :value="parent.occupation" />
+        <InfoRow label="Tgl Lahir"   :value="formatDate(parent.birthDate)" />
+        <InfoRow label="Pendidikan"  :value="parent.education" />
+        <InfoRow label="Pekerjaan"   :value="parent.occupation" />
         <InfoRow label="Penghasilan" :value="parent.incomeRange" />
-        <InfoRow label="No. HP"     :value="parent.phone" />
+        <InfoRow label="No. HP"      :value="parent.phone" />
         <InfoRow
           label="Status"
           :value="normalizeIsAlive(parent.isAlive) ? 'Masih Hidup' : 'Almarhum/ah'"
@@ -517,78 +552,59 @@ const { can } = usePermission()
 
 const student = computed(() => studentsStore.current)
 
-// Loading / error state lokal (store state tidak dipakai oleh view ini)
-const isLoading = ref(true)
-const error     = ref('')
+const isLoading           = ref(true)
+const error               = ref('')
+const enrollments         = ref<StudentEnrollment[]>([])
+const enrollmentError     = ref('')
+const isLoadingEnrollments = ref(false)   // BUG-8 FIX: state loading enrollment
 
-// Enrollment history (dimuat terpisah agar error-nya tidak menutup halaman)
-const enrollments    = ref<StudentEnrollment[]>([])
-const enrollmentError = ref('')
-
-// Archive
+// Archive / restore
 const showArchiveDialog = ref(false)
-const isArchiving = ref(false)
-
-// Restore
+const isArchiving       = ref(false)
 const showRestoreDialog = ref(false)
-const isRestoring = ref(false)
+const isRestoring       = ref(false)
 
 // ─────────────────────────────────────────────────────────────────
-// Tab definitions — ikon diambil dari lucide-vue-next
+// Tabs
 // ─────────────────────────────────────────────────────────────────
 const tabs = [
-  { key: 'identity',   label: 'Identitas',  icon: User          },
-  { key: 'parents',    label: 'Orang Tua',  icon: Users         },
-  { key: 'health',     label: 'Kesehatan',  icon: Heart         },
-  { key: 'education',  label: 'Pendidikan', icon: BookOpen      },
-  { key: 'enrollment', label: 'Riwayat Kelas', icon: History    },
+  { key: 'identity',   label: 'Identitas',     icon: User        },
+  { key: 'parents',    label: 'Orang Tua',     icon: Users       },
+  { key: 'health',     label: 'Kesehatan',     icon: Heart       },
+  { key: 'education',  label: 'Pendidikan',    icon: BookOpen    },
+  { key: 'enrollment', label: 'Riwayat Kelas', icon: History     },
 ]
 const activeTab = ref('identity')
+
+// Lebar skeleton representatif per tab button (BUG-7 FIX)
+const tabSkeletonWidths = ['w-20', 'w-24', 'w-24', 'w-24', 'w-28']
 
 // ─────────────────────────────────────────────────────────────────
 // Computed helpers
 // ─────────────────────────────────────────────────────────────────
+const studentAge = computed((): number | null =>
+  calculateAge(student.value?.birthDate)
+)
 
-/**
- * Usia siswa dihitung dari tanggal lahir.
- */
-const studentAge = computed((): number | null => {
-  return calculateAge(student.value?.birthDate)
-})
-
-/**
- * BUG-10 FIX: NIK hanya ditampilkan mask jika:
- * - user PUNYA permission STUDENT_VIEW_SENSITIVE → tampilkan nilai asli atau '—'
- * - user TIDAK punya permission:
- *   - jika backend sudah strip field (teacher) → student.nik undefined → tampilkan '—'
- *   - jika backend mengirim field tapi user tidak boleh lihat (edge case) → tampilkan mask
- * Hasilnya: teacher melihat '—', admin/principal yang diblokir melihat mask.
- */
 const nikDisplay = computed((): string | undefined => {
   if (can(PERMISSIONS.STUDENT_VIEW_SENSITIVE)) {
     return student.value?.nik || undefined
   }
-  // Backend sudah hapus field nik untuk teacher → undefined → InfoRow tampil '—'
   if (!student.value?.nik) return undefined
-  // Field ada tapi tidak boleh dilihat → mask
   return '••••••••••••••••'
 })
 
-/**
- * Label familyStatus yang lebih ramah.
- */
 const familyStatusLabel = computed((): string | undefined => {
   const map: Record<string, string> = {
-    kandung:    'Anak Kandung',
-    tiri:       'Anak Tiri',
-    angkat:     'Anak Angkat',
-    yatim:      'Yatim',
-    piatu:      'Piatu',
+    kandung:     'Anak Kandung',
+    tiri:        'Anak Tiri',
+    angkat:      'Anak Angkat',
+    yatim:       'Yatim',
+    piatu:       'Piatu',
     yatim_piatu: 'Yatim Piatu',
   }
   const val = student.value?.familyStatus
-  if (!val) return undefined
-  return map[val] ?? val
+  return val ? (map[val] ?? val) : undefined
 })
 
 // ─────────────────────────────────────────────────────────────────
@@ -603,25 +619,25 @@ function getParent(rel: 'father' | 'mother' | 'guardian'): StudentParent | undef
 // ─────────────────────────────────────────────────────────────────
 const studentId = computed(() => route.params.id as string)
 
-async function loadEnrollments() {
-  enrollmentError.value = ''
+async function loadEnrollments(): Promise<void> {
+  enrollmentError.value       = ''
+  isLoadingEnrollments.value  = true   // BUG-8 FIX
   try {
     enrollments.value = await studentsService.getEnrollments(studentId.value)
   } catch (e: unknown) {
-    // BUG-6 FIX: Error enrollment disimpan di enrollmentError (bukan error utama)
-    // sehingga data siswa yang sudah dimuat tetap tampil, hanya tab riwayat
-    // kelas yang menampilkan pesan error parsial + tombol retry.
     enrollmentError.value = e instanceof Error ? e.message : 'Gagal memuat riwayat kelas.'
+  } finally {
+    isLoadingEnrollments.value = false
   }
 }
 
-async function retryEnrollments() {
+async function retryEnrollments(): Promise<void> {
   await loadEnrollments()
 }
 
-async function retryLoad() {
+async function retryLoad(): Promise<void> {
   isLoading.value = true
-  error.value = ''
+  error.value     = ''
   studentsStore.clearCurrent()
   try {
     await studentsStore.fetchDetail(studentId.value)
@@ -636,54 +652,69 @@ async function retryLoad() {
 // ─────────────────────────────────────────────────────────────────
 // Archive
 // ─────────────────────────────────────────────────────────────────
-
-/**
- * BUG-5 FIX: Hapus async yang tidak diperlukan — fungsi ini hanya set flag.
- * BUG-14 FIX: Guard isArchiving agar double-click tidak bisa buka dialog dua kali.
- */
-function handleArchive() {
+function handleArchive(): void {
   if (isArchiving.value) return
   showArchiveDialog.value = true
 }
 
-async function confirmArchive() {
+async function confirmArchive(): Promise<void> {
   if (!student.value) return
   isArchiving.value = true
   try {
     await studentsService.archive(student.value.id)
     studentsStore.removeFromList(student.value.id)
     toast.success('Siswa berhasil diarsipkan.')
+    /*
+     * BUG-3 FIX: Reset flag sebelum navigasi agar state bersih jika komponen
+     * belum di-unmount saat push berjalan (browser SPA cepat).
+     */
+    isArchiving.value       = false
+    showArchiveDialog.value = false
     router.push('/students')
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : 'Gagal mengarsipkan siswa.')
-  } finally {
-    isArchiving.value = false
+    isArchiving.value       = false
     showArchiveDialog.value = false
   }
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Restore (fitur baru: aktifkan kembali siswa dari halaman detail)
+// Restore
 // ─────────────────────────────────────────────────────────────────
-function handleRestore() {
+function handleRestore(): void {
   if (isRestoring.value) return
   showRestoreDialog.value = true
 }
 
-async function confirmRestore() {
+async function confirmRestore(): Promise<void> {
   if (!student.value) return
+  const id = student.value.id   // simpan id sebelum async agar tidak stale
   isRestoring.value = true
   try {
-    await studentsService.restore(student.value.id)
-    // Perbarui status di store tanpa refetch penuh
-    studentsStore.updateInList({ ...student.value, status: 'active' })
-    // Perbarui current juga
-    await studentsStore.fetchDetail(student.value.id)
+    await studentsService.restore(id)
+
+    /*
+     * BUG-2/6 FIX: Hapus double-write optimistic + fetchDetail.
+     * Cukup lakukan satu fetchDetail untuk memuat data terbaru.
+     * Jika fetchDetail gagal, tangkap errornya dan tampilkan ke user
+     * (sebelumnya error di-swallow → uncaught rejection).
+     */
+    try {
+      await studentsStore.fetchDetail(id)
+    } catch {
+      // fetchDetail gagal setelah restore berhasil — perbarui hanya status
+      // secara optimistic agar UI tidak menunjukkan status lama.
+      if (student.value) {
+        studentsStore.updateInList({ ...student.value, status: 'active' })
+      }
+      toast.warning('Siswa diaktifkan, tapi gagal memuat data terbaru. Halaman mungkin perlu direfresh.')
+    }
+
     toast.success('Siswa berhasil diaktifkan kembali.')
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : 'Gagal mengaktifkan siswa.')
   } finally {
-    isRestoring.value = false
+    isRestoring.value       = false
     showRestoreDialog.value = false
   }
 }
@@ -693,18 +724,13 @@ async function confirmRestore() {
 // ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
   studentsStore.clearCurrent()
-  // BUG-18 FIX (dipertahankan): Reset error lama agar tidak flash saat navigasi.
-  error.value = ''
+  error.value           = ''
   enrollmentError.value = ''
-  isLoading.value = true
+  isLoading.value       = true
 
   try {
-    // BUG-19 FIX (dipertahankan): fetchDetail() melempar error jika gagal.
     await studentsStore.fetchDetail(studentId.value)
-    if (student.value) {
-      // BUG-6 FIX: Load enrollment terpisah — error-nya tidak menutup halaman.
-      await loadEnrollments()
-    }
+    if (student.value) await loadEnrollments()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Gagal memuat data siswa.'
   } finally {
@@ -714,7 +740,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* Transisi fade saat ganti tab */
 .tab-fade-enter-active,
 .tab-fade-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;
