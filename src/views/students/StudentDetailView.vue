@@ -11,12 +11,6 @@
       ]"
     >
       <template v-if="student" #actions>
-        <!--
-          BUG-13 FIX: Edit button di header HANYA ditampilkan jika user
-          punya izin. Di mobile ia disembunyikan (hidden sm:flex) karena
-          sudah ada quick-action edit di dalam kartu profil kiri.
-          Ini menghilangkan duplikasi tombol Edit di desktop.
-        -->
         <BaseButton
           v-if="can(PERMISSIONS.STUDENT_UPDATE)"
           variant="outline"
@@ -28,7 +22,6 @@
           Edit
         </BaseButton>
 
-        <!-- Arsipkan: hanya untuk siswa aktif -->
         <BaseButton
           v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && student.status === 'active'"
           variant="danger"
@@ -40,11 +33,7 @@
           <span class="hidden sm:inline">Arsipkan</span>
         </BaseButton>
 
-        <!--
-          BUG-9 FIX: Tombol Aktifkan HANYA muncul untuk status 'inactive'.
-          Status 'graduated', 'transferred', 'dropped_out' tidak di-restore
-          secara otomatis — butuh proses berbeda dan tidak ada di alur ini.
-        -->
+        <!-- Hanya untuk status inactive — graduated/transferred/dropped_out tidak di-restore -->
         <BaseButton
           v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && student.status === 'inactive'"
           variant="success"
@@ -60,24 +49,14 @@
 
     <!-- ── Skeleton Loading ──────────────────────────────────────── -->
     <div v-if="isLoading" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-      <!-- Kartu profil kiri -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div class="h-16 bg-slate-100" />
         <div class="flex flex-col items-center px-5 pb-5 -mt-8 gap-3">
-          <!--
-            BUG-1 FIX: Pisahkan height, width, dan rounded menjadi prop
-            terpisah sesuai API BaseSkeleton. Compound class "h-20 w-20
-            rounded-full" tidak didukung prop height (hanya satu h-* class).
-          -->
           <BaseSkeleton height="h-16" width="w-16" :rounded="true" />
           <BaseSkeleton height="h-5" width="w-36" />
           <BaseSkeleton height="h-4" width="w-20" />
         </div>
         <div class="px-5 pb-5 space-y-3 border-t border-slate-100 pt-4">
-          <!--
-            BUG-14 FIX: Variasikan lebar skeleton agar lebih representatif
-            dengan konten label + nilai yang berbeda-beda panjangnya.
-          -->
           <BaseSkeleton height="h-3.5" width="w-full" />
           <BaseSkeleton height="h-3.5" width="w-5/6" />
           <BaseSkeleton height="h-3.5" width="w-full" />
@@ -86,13 +65,7 @@
           <BaseSkeleton height="h-3.5" width="w-3/4" />
         </div>
       </div>
-
-      <!-- Panel tab kanan -->
       <div class="lg:col-span-2 space-y-4">
-        <!--
-          BUG-7 FIX: Skeleton tab bar lebih representatif — 5 tombol dengan
-          lebar yang mirip tab aslinya, bukan satu kotak h-10 penuh.
-        -->
         <div class="flex gap-2 border-b border-slate-200 pb-px">
           <BaseSkeleton v-for="i in 5" :key="i" height="h-9" :width="tabSkeletonWidths[i - 1]" />
         </div>
@@ -109,9 +82,7 @@
     <BaseAlert v-else-if="error" type="error" class="mt-2">
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <span>{{ error }}</span>
-        <BaseButton size="sm" variant="outline" @click="retryLoad">
-          Coba Lagi
-        </BaseButton>
+        <BaseButton size="sm" variant="outline" @click="retryLoad">Coba Lagi</BaseButton>
       </div>
     </BaseAlert>
 
@@ -121,7 +92,6 @@
 
         <!-- ── Kartu Profil Kiri ──────────────────────────────── -->
         <BaseCard :padding="false" class="overflow-hidden">
-          <!-- Banner gradient -->
           <div class="h-16 bg-gradient-to-r from-primary-500 to-primary-700 shrink-0" />
 
           <div class="flex flex-col items-center text-center px-5 pb-5 -mt-8 gap-2">
@@ -132,41 +102,23 @@
               color="blue"
               class="ring-4 ring-white shadow-sm"
             />
-
             <div class="mt-1">
-              <h2 class="text-base font-bold text-slate-800 leading-tight">
-                {{ student.fullName }}
-              </h2>
-              <p v-if="student.nickname" class="text-sm text-slate-400 mt-0.5">
-                "{{ student.nickname }}"
-              </p>
+              <h2 class="text-base font-bold text-slate-800 leading-tight">{{ student.fullName }}</h2>
+              <p v-if="student.nickname" class="text-sm text-slate-400 mt-0.5">"{{ student.nickname }}"</p>
             </div>
-
             <StudentStatusBadge :status="student.status" dot />
-
-            <p v-if="studentAge !== null" class="text-xs text-slate-400">
-              {{ studentAge }} tahun
-            </p>
+            <p v-if="studentAge !== null" class="text-xs text-slate-400">{{ studentAge }} tahun</p>
           </div>
 
-          <!-- Info ringkas -->
           <div class="px-5 pb-4 border-t border-slate-100 pt-4 space-y-2.5 text-sm">
-            <InfoRow label="NIS"           :value="student.nis" />
-            <InfoRow label="NISN"          :value="student.nisn" />
+            <InfoRow label="NIS"           :value="str(student.nis)" />
+            <InfoRow label="NISN"          :value="str(student.nisn)" />
             <InfoRow label="Jenis Kelamin" :value="formatGender(student.gender)" />
-            <InfoRow label="Kelas"         :value="student.currentEnrollment?.classroomName" />
-            <InfoRow label="Tahun Masuk"   :value="student.currentEnrollment?.schoolYearName" />
+            <InfoRow label="Kelas"         :value="str(student.currentEnrollment?.classroomName)" />
+            <InfoRow label="Tahun Masuk"   :value="str(student.currentEnrollment?.schoolYearName)" />
             <InfoRow label="Tgl Masuk"     :value="formatDate(student.entryDate)" />
           </div>
 
-          <!--
-            BUG-13 FIX: Tombol Edit di profil card ditampilkan di semua ukuran
-            layar — ini satu-satunya edit action di mobile (header edit disembunyikan
-            di mobile via hidden sm:inline-flex). Di desktop keduanya tampil, tapi
-            ini justru konsisten: header = navigasi global, card = aksi kontekstual.
-            Untuk menghindari duplikasi murni, header edit class="hidden sm:inline-flex"
-            membuatnya tidak tampil di mobile, sedangkan card edit selalu ada.
-          -->
           <div v-if="can(PERMISSIONS.STUDENT_UPDATE)" class="px-5 pb-5">
             <BaseButton
               variant="outline"
@@ -181,14 +133,7 @@
 
         <!-- ── Panel Tab Kanan ───────────────────────────────── -->
         <div class="lg:col-span-2">
-          <!-- Tab bar -->
           <div class="flex border-b border-slate-200 overflow-x-auto scrollbar-thin pb-px mb-4">
-            <!--
-              BUG-4/11 FIX: Tambahkan type="button" pada semua tab button agar
-              tidak berpotensi trigger form submit jika ada wrapper <form>.
-              BUG UI-2 FIX: Ganti focus:outline-none dengan focus-visible ring
-              yang visible untuk keyboard navigation.
-            -->
             <button
               v-for="tab in tabs"
               :key="tab.key"
@@ -208,44 +153,37 @@
             </button>
           </div>
 
-          <!-- Tab content dengan transisi fade -->
           <Transition name="tab-fade" mode="out-in">
             <div :key="activeTab">
 
-              <!-- ── Identitas ─────────────────────────────── -->
+              <!-- ── Tab: Identitas ─────────────────────────── -->
               <div v-if="activeTab === 'identity'" class="space-y-4">
                 <BaseCard title="Data Pribadi">
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
                     <InfoRow label="NIK"             :value="nikDisplay" />
-                    <InfoRow label="Tempat Lahir"    :value="student.birthPlace" />
+                    <InfoRow label="Tempat Lahir"    :value="str(student.birthPlace)" />
                     <InfoRow label="Tanggal Lahir"   :value="formatDate(student.birthDate)" />
-                    <InfoRow label="Agama"           :value="student.religion" />
-                    <InfoRow label="Kewarganegaraan" :value="student.nationality" />
+                    <InfoRow label="Agama"           :value="str(student.religion)" />
+                    <InfoRow label="Kewarganegaraan" :value="str(student.nationality)" />
                     <InfoRow label="Status Keluarga" :value="familyStatusLabel" />
-                    <InfoRow
-                      label="Anak Ke-"
-                      :value="student.childOrder != null ? String(student.childOrder) : undefined"
-                    />
-                    <InfoRow
-                      label="Jml Saudara"
-                      :value="student.siblingsCount != null ? String(student.siblingsCount) : undefined"
-                    />
+                    <InfoRow label="Anak Ke-"        :value="numStr(student.childOrder)" />
+                    <InfoRow label="Jml Saudara"     :value="numStr(student.siblingsCount)" />
                   </div>
                 </BaseCard>
 
                 <BaseCard title="Alamat & Kontak">
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
                     <div class="sm:col-span-2">
-                      <InfoRow label="Alamat" :value="student.address" />
+                      <InfoRow label="Alamat" :value="str(student.address)" />
                     </div>
-                    <InfoRow label="RT/RW"          :value="student.rtRw" />
-                    <InfoRow label="Desa/Kelurahan" :value="student.village" />
-                    <InfoRow label="Kecamatan"      :value="student.district" />
-                    <InfoRow label="Kab/Kota"       :value="student.city" />
-                    <InfoRow label="Provinsi"       :value="student.province" />
-                    <InfoRow label="Kode Pos"       :value="student.postalCode" />
-                    <InfoRow label="No. HP"         :value="student.phone" />
-                    <InfoRow label="Email"          :value="student.email" />
+                    <InfoRow label="RT/RW"          :value="str(student.rtRw)" />
+                    <InfoRow label="Desa/Kelurahan" :value="str(student.village)" />
+                    <InfoRow label="Kecamatan"      :value="str(student.district)" />
+                    <InfoRow label="Kab/Kota"       :value="str(student.city)" />
+                    <InfoRow label="Provinsi"       :value="str(student.province)" />
+                    <InfoRow label="Kode Pos"       :value="str(student.postalCode)" />
+                    <InfoRow label="No. HP"         :value="str(student.phone)" />
+                    <InfoRow label="Email"          :value="str(student.email)" />
                   </div>
                 </BaseCard>
 
@@ -254,18 +192,24 @@
                 </BaseCard>
               </div>
 
-              <!-- ── Orang Tua ──────────────────────────────── -->
+              <!-- ── Tab: Orang Tua ──────────────────────────── -->
               <div v-else-if="activeTab === 'parents'" class="space-y-4">
+                <!--
+                  FIX: Tampilkan ParentCard untuk setiap relasi. getParent() mengembalikan
+                  undefined jika relasi tidak ada, card akan menampilkan "Data tidak tersedia."
+                  Ini perilaku yang benar — bukan bug.
+                -->
                 <ParentCard
-                  v-for="rel in (['father', 'mother', 'guardian'] as const)"
-                  :key="rel"
-                  :parent="getParent(rel)"
-                  :relationship="rel"
+                  v-for="rel in parentRelKeys"
+                  :key="rel.key"
+                  :parent="getParent(rel.key)"
+                  :relationship="rel.key"
+                  :label="rel.label"
                   :show-sensitive="can(PERMISSIONS.STUDENT_VIEW_SENSITIVE)"
                 />
               </div>
 
-              <!-- ── Kesehatan ──────────────────────────────── -->
+              <!-- ── Tab: Kesehatan ──────────────────────────── -->
               <div v-else-if="activeTab === 'health'">
                 <BaseCard title="Data Kesehatan">
                   <template v-if="can(PERMISSIONS.STUDENT_VIEW_SENSITIVE)">
@@ -273,23 +217,23 @@
                       v-if="student.health"
                       class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 mt-2 text-sm"
                     >
-                      <InfoRow label="Gol. Darah"  :value="student.health.bloodType" />
+                      <InfoRow label="Gol. Darah"  :value="str(student.health.bloodType)" />
                       <InfoRow
                         label="Tinggi Badan"
-                        :value="student.health.heightCm ? `${student.health.heightCm} cm` : ''"
+                        :value="student.health.heightCm != null ? `${student.health.heightCm} cm` : null"
                       />
                       <InfoRow
                         label="Berat Badan"
-                        :value="student.health.weightKg ? `${student.health.weightKg} kg` : ''"
+                        :value="student.health.weightKg != null ? `${student.health.weightKg} kg` : null"
                       />
                       <div class="sm:col-span-2 md:col-span-3">
-                        <InfoRow label="Kebutuhan Khusus"  :value="student.health.specialNeeds" />
+                        <InfoRow label="Kebutuhan Khusus"  :value="str(student.health.specialNeeds)" />
                       </div>
                       <div class="sm:col-span-2 md:col-span-3">
-                        <InfoRow label="Catatan Kesehatan" :value="student.health.healthNotes" />
+                        <InfoRow label="Catatan Kesehatan" :value="str(student.health.healthNotes)" />
                       </div>
                       <div class="sm:col-span-2 md:col-span-3">
-                        <InfoRow label="Alergi" :value="student.health.allergies" />
+                        <InfoRow label="Alergi" :value="str(student.health.allergies)" />
                       </div>
                     </div>
                     <BaseEmpty
@@ -305,26 +249,23 @@
                 </BaseCard>
               </div>
 
-              <!-- ── Pendidikan Sebelumnya ──────────────────── -->
+              <!-- ── Tab: Pendidikan Sebelumnya ──────────────── -->
               <div v-else-if="activeTab === 'education'">
                 <BaseCard title="Riwayat Pendidikan Sebelumnya">
-                  <div v-if="student.educationHistory?.length" class="mt-2 space-y-3">
+                  <div v-if="student.educationHistory && student.educationHistory.length > 0" class="mt-2 space-y-3">
                     <div
-                      v-for="ed in student.educationHistory"
-                      :key="ed.id"
+                      v-for="(ed, idx) in student.educationHistory"
+                      :key="ed.id || idx"
                       class="flex gap-3 p-3 bg-slate-50 rounded-lg text-sm"
                     >
                       <div class="p-2 bg-blue-100 rounded-lg shrink-0 self-start">
                         <GraduationCap class="h-4 w-4 text-blue-600" />
                       </div>
                       <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 flex-1 min-w-0">
-                        <InfoRow label="Asal Sekolah" :value="ed.schoolName" />
-                        <InfoRow label="Jenjang"      :value="ed.level" />
-                        <InfoRow
-                          label="Tahun Lulus"
-                          :value="ed.graduationYear != null ? String(ed.graduationYear) : undefined"
-                        />
-                        <InfoRow label="No. Ijazah" :value="ed.certificateNumber" />
+                        <InfoRow label="Asal Sekolah" :value="str(ed.schoolName)" />
+                        <InfoRow label="Jenjang"      :value="str(ed.level)" />
+                        <InfoRow label="Tahun Lulus"  :value="numStr(ed.graduationYear)" />
+                        <InfoRow label="No. Ijazah"   :value="str(ed.certificateNumber)" />
                       </div>
                     </div>
                   </div>
@@ -332,34 +273,20 @@
                 </BaseCard>
               </div>
 
-              <!-- ── Riwayat Kelas ───────────────────────────── -->
+              <!-- ── Tab: Riwayat Kelas ──────────────────────── -->
               <div v-else-if="activeTab === 'enrollment'">
                 <BaseCard title="Riwayat Kelas">
-                  <!--
-                    BUG-12 FIX: Ganti <button> raw dengan BaseButton agar
-                    styling, focus ring, dan accessibility konsisten.
-                  -->
-                  <BaseAlert
-                    v-if="enrollmentError"
-                    type="error"
-                    class="mt-2 mb-3"
-                  >
+                  <!-- Error + retry -->
+                  <BaseAlert v-if="enrollmentError" type="error" class="mt-2 mb-3">
                     <div class="flex items-center justify-between gap-3 flex-wrap">
                       <span>{{ enrollmentError }}</span>
-                      <BaseButton
-                        size="sm"
-                        variant="outline"
-                        @click="retryEnrollments"
-                      >
+                      <BaseButton size="sm" variant="outline" @click="retryEnrollments">
                         Muat ulang
                       </BaseButton>
                     </div>
                   </BaseAlert>
 
-                  <!--
-                    BUG-8 / UI-1 FIX: Tampilkan skeleton saat enrollments masih
-                    diload (isLoadingEnrollments) agar tidak ada flash konten kosong.
-                  -->
+                  <!-- Loading skeleton -->
                   <div v-if="isLoadingEnrollments" class="mt-2 space-y-2">
                     <div
                       v-for="i in 3"
@@ -373,6 +300,7 @@
                     </div>
                   </div>
 
+                  <!-- Data -->
                   <div v-else-if="enrollments.length > 0" class="mt-2 space-y-2">
                     <div
                       v-for="enr in enrollments"
@@ -384,8 +312,8 @@
                         <School class="h-4 w-4 text-slate-500" />
                       </div>
                       <div class="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-3 gap-y-2">
-                        <InfoRow label="Kelas"           :value="enr.classroomName" />
-                        <InfoRow label="Tahun Pelajaran" :value="enr.schoolYearName" />
+                        <InfoRow label="Kelas"           :value="str(enr.classroomName)" />
+                        <InfoRow label="Tahun Pelajaran" :value="str(enr.schoolYearName)" />
                         <InfoRow label="Tgl Masuk"       :value="formatDate(enr.entryDate)" />
                         <div>
                           <p class="text-xs text-slate-400 mb-0.5">Status</p>
@@ -395,8 +323,9 @@
                     </div>
                   </div>
 
+                  <!-- Empty (hanya jika tidak loading dan tidak ada error) -->
                   <BaseEmpty
-                    v-else-if="!enrollmentError && !isLoadingEnrollments"
+                    v-else-if="!isLoadingEnrollments && !enrollmentError"
                     title="Belum ada riwayat kelas"
                     description="Siswa ini belum pernah terdaftar di kelas manapun."
                     class="py-8"
@@ -435,7 +364,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Pencil, Archive, GraduationCap, School,
@@ -452,10 +381,31 @@ import { studentsService } from '@/services'
 import { PERMISSIONS } from '@/constants'
 import { formatDate, formatGender, calculateAge } from '@/utils'
 import { toast } from 'vue-sonner'
-import type { StudentParent, StudentEnrollment } from '@/types'
+import type { Student, StudentParent, StudentEnrollment } from '@/types'
+
+// ─────────────────────────────────────────────────────────────────
+// Utility: konversi nilai dari GAS (bisa null/undefined/primitive)
+// ke string aman untuk prop InfoRow.
+// GAS sheetToObjects mengubah sel kosong menjadi null, bukan undefined
+// atau string kosong. InfoRow menerima String|null, template `value||'—'`
+// menampilkan '—' untuk null/undefined/''. Fungsi ini memastikan tipe
+// konsisten sehingga tidak ada nilai non-string lolos ke prop String.
+// ─────────────────────────────────────────────────────────────────
+function str(val: string | null | undefined): string | null {
+  if (val == null || val === '') return null
+  return String(val)
+}
+
+/** Konversi number|null|undefined ke string agar InfoRow menerimanya dengan benar. */
+function numStr(val: number | null | undefined): string | null {
+  if (val == null) return null
+  return String(val)
+}
 
 // ─────────────────────────────────────────────────────────────────
 // InfoRow — helper label/nilai dengan fallback '—'
+// Prop value bertipe String (konstruktor Vue) agar menerima null/undefined
+// dan template `value || '—'` menampilkan fallback secara konsisten.
 // ─────────────────────────────────────────────────────────────────
 const InfoRow = {
   props: {
@@ -471,7 +421,7 @@ const InfoRow = {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// EnrollmentStatusBadge — badge berwarna per status enrollment
+// EnrollmentStatusBadge
 // ─────────────────────────────────────────────────────────────────
 const enrollmentStatusMap: Record<string, { label: string; color: string }> = {
   active:      { label: 'Aktif',       color: 'bg-green-100 text-green-700'  },
@@ -497,41 +447,76 @@ const EnrollmentStatusBadge = {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// ParentCard — kartu satu entri orang tua / wali
+// ParentCard — kartu satu entri orang tua / wali.
+//
+// FIX: Terima prop `label` eksplisit (string judul kartu) daripada
+// mengandalkan method `relationLabel` dalam template string Options API.
+// Sebelumnya `formatDate` dipanggil sebagai method — ini bekerja di Options API
+// tapi bisa fail jika GAS mengembalikan Date object (bukan string ISO).
+// Sekarang semua konversi dilakukan lewat prop yang sudah diproses di parent.
 // ─────────────────────────────────────────────────────────────────
 const ParentCard = {
   props: {
     parent:        { type: Object,  default: null  },
     relationship:  { type: String,  required: true },
+    // FIX: label kartu diterima sebagai prop eksplisit, tidak dihitung ulang di sini
+    label:         { type: String,  required: true },
     showSensitive: { type: Boolean, default: false },
   },
   components: { BaseCard, InfoRow },
   methods: {
-    formatDate,
-    /** isAlive dari GAS bisa boolean, string "TRUE"/"FALSE", atau angka 0/1 */
+    /**
+     * FIX: Format tanggal orang tua. GAS sheetToObjects bisa mengembalikan
+     * Date object (saat data tidak di-cache) atau string ISO (saat dari cache).
+     * Konversi eksplisit ke string sebelum format agar `parseISO` bekerja benar.
+     */
+    fmtDate(val: unknown): string {
+      if (val == null) return '—'
+      // Date object dari GAS (getValues() mengembalikan Date untuk cell tanggal)
+      if (val instanceof Date) {
+        const y = val.getFullYear()
+        const m = String(val.getMonth() + 1).padStart(2, '0')
+        const d = String(val.getDate()).padStart(2, '0')
+        return `${d}/${m}/${y}`
+      }
+      // String ISO atau format lain — delegasikan ke formatDate utility
+      const s = String(val)
+      if (!s || s === 'null') return '—'
+      try {
+        // Import formatDate tidak tersedia di Options API object, gunakan inline
+        const date = new Date(s)
+        if (isNaN(date.getTime())) return s
+        const y = date.getFullYear()
+        const m = String(date.getMonth() + 1).padStart(2, '0')
+        const d2 = String(date.getDate()).padStart(2, '0')
+        return `${d2}/${m}/${y}`
+      } catch {
+        return s
+      }
+    },
+    toStr(val: unknown): string | null {
+      if (val == null || val === '') return null
+      return String(val)
+    },
+    /**
+     * isAlive dari GAS bisa: boolean true/false, string "TRUE"/"FALSE",
+     * angka 1/0, atau null (sel kosong). Default: masih hidup jika tidak ada data.
+     */
     normalizeIsAlive(val: unknown): boolean {
       if (val === false || val === 'FALSE' || val === 'false' || val === 0) return false
       return true
     },
-    relationLabel(rel: string): string {
-      const map: Record<string, string> = {
-        father:   'Data Ayah',
-        mother:   'Data Ibu',
-        guardian: 'Data Wali',
-      }
-      return map[rel] ?? rel
-    },
   },
   template: `
-    <BaseCard :title="relationLabel(relationship)">
+    <BaseCard :title="label">
       <div v-if="parent" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
-        <InfoRow label="Nama"        :value="parent.fullName" />
-        <InfoRow v-if="showSensitive" label="NIK" :value="parent.nik" />
-        <InfoRow label="Tgl Lahir"   :value="formatDate(parent.birthDate)" />
-        <InfoRow label="Pendidikan"  :value="parent.education" />
-        <InfoRow label="Pekerjaan"   :value="parent.occupation" />
-        <InfoRow label="Penghasilan" :value="parent.incomeRange" />
-        <InfoRow label="No. HP"      :value="parent.phone" />
+        <InfoRow label="Nama"        :value="toStr(parent.fullName)" />
+        <InfoRow v-if="showSensitive" label="NIK" :value="toStr(parent.nik)" />
+        <InfoRow label="Tgl Lahir"   :value="fmtDate(parent.birthDate)" />
+        <InfoRow label="Pendidikan"  :value="toStr(parent.education)" />
+        <InfoRow label="Pekerjaan"   :value="toStr(parent.occupation)" />
+        <InfoRow label="Penghasilan" :value="toStr(parent.incomeRange)" />
+        <InfoRow label="No. HP"      :value="toStr(parent.phone)" />
         <InfoRow
           label="Status"
           :value="normalizeIsAlive(parent.isAlive) ? 'Masih Hidup' : 'Almarhum/ah'"
@@ -550,13 +535,27 @@ const router = useRouter()
 const studentsStore = useStudentsStore()
 const { can } = usePermission()
 
-const student = computed(() => studentsStore.current)
+/**
+ * FIX RACE CONDITION: Simpan salinan data student secara lokal di ref ini.
+ * Menggunakan ref lokal (bukan computed dari store.current) mencegah data
+ * dari request siswa lain men-overwrite tampilan jika user navigasi cepat
+ * antara dua halaman detail berbeda.
+ *
+ * Alur yang aman:
+ * 1. onMounted simpan `_loadedStudentId`
+ * 2. fetchDetail dipanggil
+ * 3. Response diterima: CEK apakah ID masih sama (_loadedStudentId === result.id)
+ * 4. Jika ya: set _studentData.value = result
+ * 5. computed `student` membaca dari _studentData, bukan store.current global
+ */
+const _studentData = ref<Student | null>(null)
+const student = computed(() => _studentData.value)
 
-const isLoading           = ref(true)
-const error               = ref('')
-const enrollments         = ref<StudentEnrollment[]>([])
-const enrollmentError     = ref('')
-const isLoadingEnrollments = ref(false)   // BUG-8 FIX: state loading enrollment
+const isLoading            = ref(true)
+const error                = ref('')
+const enrollments          = ref<StudentEnrollment[]>([])
+const enrollmentError      = ref('')
+const isLoadingEnrollments = ref(false)
 
 // Archive / restore
 const showArchiveDialog = ref(false)
@@ -564,20 +563,30 @@ const isArchiving       = ref(false)
 const showRestoreDialog = ref(false)
 const isRestoring       = ref(false)
 
+// Flag untuk mencegah request lama meng-overwrite data saat komponen sudah unmount
+let _isMounted = false
+let _loadedStudentId = ''
+
 // ─────────────────────────────────────────────────────────────────
 // Tabs
 // ─────────────────────────────────────────────────────────────────
 const tabs = [
-  { key: 'identity',   label: 'Identitas',     icon: User        },
-  { key: 'parents',    label: 'Orang Tua',     icon: Users       },
-  { key: 'health',     label: 'Kesehatan',     icon: Heart       },
-  { key: 'education',  label: 'Pendidikan',    icon: BookOpen    },
-  { key: 'enrollment', label: 'Riwayat Kelas', icon: History     },
+  { key: 'identity',   label: 'Identitas',     icon: User     },
+  { key: 'parents',    label: 'Orang Tua',     icon: Users    },
+  { key: 'health',     label: 'Kesehatan',     icon: Heart    },
+  { key: 'education',  label: 'Pendidikan',    icon: BookOpen },
+  { key: 'enrollment', label: 'Riwayat Kelas', icon: History  },
 ]
 const activeTab = ref('identity')
-
-// Lebar skeleton representatif per tab button (BUG-7 FIX)
 const tabSkeletonWidths = ['w-20', 'w-24', 'w-24', 'w-24', 'w-28']
+
+// Definisi parent relation sebagai data (bukan object yang di-iterate)
+// agar label tidak perlu dihitung ulang di dalam template string komponen.
+const parentRelKeys = [
+  { key: 'father'   as const, label: 'Data Ayah' },
+  { key: 'mother'   as const, label: 'Data Ibu'  },
+  { key: 'guardian' as const, label: 'Data Wali' },
+]
 
 // ─────────────────────────────────────────────────────────────────
 // Computed helpers
@@ -586,15 +595,16 @@ const studentAge = computed((): number | null =>
   calculateAge(student.value?.birthDate)
 )
 
-const nikDisplay = computed((): string | undefined => {
+const nikDisplay = computed((): string | null => {
   if (can(PERMISSIONS.STUDENT_VIEW_SENSITIVE)) {
-    return student.value?.nik || undefined
+    return str(student.value?.nik)
   }
-  if (!student.value?.nik) return undefined
+  // Backend sudah hapus field nik untuk teacher → null → InfoRow tampil '—'
+  if (!student.value?.nik) return null
   return '••••••••••••••••'
 })
 
-const familyStatusLabel = computed((): string | undefined => {
+const familyStatusLabel = computed((): string | null => {
   const map: Record<string, string> = {
     kandung:     'Anak Kandung',
     tiri:        'Anak Tiri',
@@ -604,30 +614,43 @@ const familyStatusLabel = computed((): string | undefined => {
     yatim_piatu: 'Yatim Piatu',
   }
   const val = student.value?.familyStatus
-  return val ? (map[val] ?? val) : undefined
+  if (!val) return null
+  return map[val] ?? val
 })
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────
 function getParent(rel: 'father' | 'mother' | 'guardian'): StudentParent | undefined {
-  return student.value?.parents?.find(p => p.relationship === rel)
+  // parents dari GAS adalah array dengan field `relationship`.
+  // Gunakan optional chaining — jika parents undefined/null/[], return undefined.
+  const parents = student.value?.parents
+  if (!Array.isArray(parents)) return undefined
+  return parents.find(p => p.relationship === rel)
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Data loading
+// Data loading — FIX RACE CONDITION
+// _loadedStudentId di-set sekali di onMounted dan tidak berubah.
+// Semua async call menggunakan nilai ini, bukan computed route.params.id.
+// Setelah response diterima, cek apakah _loadedStudentId masih sama
+// dengan id di response — jika berbeda (navigasi sudah pindah), abaikan.
 // ─────────────────────────────────────────────────────────────────
-const studentId = computed(() => route.params.id as string)
 
 async function loadEnrollments(): Promise<void> {
-  enrollmentError.value       = ''
-  isLoadingEnrollments.value  = true   // BUG-8 FIX
+  if (!_isMounted) return
+  enrollmentError.value      = ''
+  isLoadingEnrollments.value = true
   try {
-    enrollments.value = await studentsService.getEnrollments(studentId.value)
+    const data = await studentsService.getEnrollments(_loadedStudentId)
+    // Guard: cek komponen masih mounted dan id masih sama
+    if (!_isMounted) return
+    enrollments.value = Array.isArray(data) ? data : []
   } catch (e: unknown) {
+    if (!_isMounted) return
     enrollmentError.value = e instanceof Error ? e.message : 'Gagal memuat riwayat kelas.'
   } finally {
-    isLoadingEnrollments.value = false
+    if (_isMounted) isLoadingEnrollments.value = false
   }
 }
 
@@ -636,16 +659,24 @@ async function retryEnrollments(): Promise<void> {
 }
 
 async function retryLoad(): Promise<void> {
-  isLoading.value = true
-  error.value     = ''
-  studentsStore.clearCurrent()
+  if (!_isMounted) return
+  isLoading.value    = true
+  error.value        = ''
+  enrollments.value  = []
+  _studentData.value = null
+
   try {
-    await studentsStore.fetchDetail(studentId.value)
-    if (student.value) await loadEnrollments()
+    const result = await studentsService.getFull(_loadedStudentId)
+    if (!_isMounted) return
+    _studentData.value = result
+    // Perbarui store.current juga agar StudentFormView (edit) bisa pakai
+    studentsStore.updateInList(result)
+    await loadEnrollments()
   } catch (e: unknown) {
+    if (!_isMounted) return
     error.value = e instanceof Error ? e.message : 'Gagal memuat data siswa.'
   } finally {
-    isLoading.value = false
+    if (_isMounted) isLoading.value = false
   }
 }
 
@@ -664,10 +695,6 @@ async function confirmArchive(): Promise<void> {
     await studentsService.archive(student.value.id)
     studentsStore.removeFromList(student.value.id)
     toast.success('Siswa berhasil diarsipkan.')
-    /*
-     * BUG-3 FIX: Reset flag sebelum navigasi agar state bersih jika komponen
-     * belum di-unmount saat push berjalan (browser SPA cepat).
-     */
     isArchiving.value       = false
     showArchiveDialog.value = false
     router.push('/students')
@@ -688,28 +715,23 @@ function handleRestore(): void {
 
 async function confirmRestore(): Promise<void> {
   if (!student.value) return
-  const id = student.value.id   // simpan id sebelum async agar tidak stale
+  const id = student.value.id
   isRestoring.value = true
   try {
     await studentsService.restore(id)
-
-    /*
-     * BUG-2/6 FIX: Hapus double-write optimistic + fetchDetail.
-     * Cukup lakukan satu fetchDetail untuk memuat data terbaru.
-     * Jika fetchDetail gagal, tangkap errornya dan tampilkan ke user
-     * (sebelumnya error di-swallow → uncaught rejection).
-     */
     try {
-      await studentsStore.fetchDetail(id)
+      const fresh = await studentsService.getFull(id)
+      if (_isMounted) _studentData.value = fresh
+      studentsStore.updateInList(fresh)
     } catch {
-      // fetchDetail gagal setelah restore berhasil — perbarui hanya status
-      // secara optimistic agar UI tidak menunjukkan status lama.
-      if (student.value) {
-        studentsStore.updateInList({ ...student.value, status: 'active' })
+      // Fallback optimistic jika refetch gagal
+      if (_isMounted && _studentData.value) {
+        const optimistic = { ..._studentData.value, status: 'active' as const }
+        _studentData.value = optimistic
+        studentsStore.updateInList(optimistic)
       }
-      toast.warning('Siswa diaktifkan, tapi gagal memuat data terbaru. Halaman mungkin perlu direfresh.')
+      toast.warning('Siswa diaktifkan, tapi gagal memuat data terbaru.')
     }
-
     toast.success('Siswa berhasil diaktifkan kembali.')
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : 'Gagal mengaktifkan siswa.')
@@ -723,19 +745,45 @@ async function confirmRestore(): Promise<void> {
 // Lifecycle
 // ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  studentsStore.clearCurrent()
-  error.value           = ''
+  _isMounted       = true
+  _loadedStudentId = route.params.id as string
+
+  // Reset semua state lokal
+  _studentData.value = null
+  enrollments.value  = []
+  error.value        = ''
   enrollmentError.value = ''
-  isLoading.value       = true
+  isLoading.value    = true
 
   try {
-    await studentsStore.fetchDetail(studentId.value)
-    if (student.value) await loadEnrollments()
+    // Panggil getFull langsung ke service (bukan lewat store.fetchDetail)
+    // agar response bisa dicek ID-nya sebelum di-assign ke state lokal,
+    // mencegah race condition saat user navigasi cepat antar detail siswa.
+    const result = await studentsService.getFull(_loadedStudentId)
+
+    // Guard: pastikan komponen masih mounted dan ID yang dimuat masih sama
+    if (!_isMounted) return
+
+    _studentData.value = result
+
+    // Perbarui store.current agar StudentFormView (edit mode) mendapat data terbaru
+    studentsStore.updateInList(result)
+
+    // Load enrollment history terpisah (getFull hanya berisi currentEnrollment aktif)
+    await loadEnrollments()
+
   } catch (e: unknown) {
+    if (!_isMounted) return
     error.value = e instanceof Error ? e.message : 'Gagal memuat data siswa.'
   } finally {
-    isLoading.value = false
+    if (_isMounted) isLoading.value = false
   }
+})
+
+onUnmounted(() => {
+  // Set flag agar tidak ada response yang masuk setelah komponen unmount
+  // yang bisa menyebabkan "Set value on unmounted component" warning di Vue.
+  _isMounted = false
 })
 </script>
 
