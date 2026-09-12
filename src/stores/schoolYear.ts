@@ -30,17 +30,42 @@ export const useSchoolYearStore = defineStore('schoolYear', () => {
     if (initialized.value) return
     isLoading.value = true
     try {
-      const [syList, gradeList] = await Promise.all([
+      // Jalankan keduanya paralel, tapi tangani masing-masing secara independen
+      // agar kegagalan fetch grades tidak memblokir schoolYears (dan sebaliknya).
+      const results = await Promise.allSettled([
         classroomsService.listSchoolYears(),
         classroomsService.listGrades(),
       ])
-      schoolYears.value = syList
-      grades.value = gradeList
-      initialized.value = true
+
+      if (results[0].status === 'fulfilled') {
+        schoolYears.value = results[0].value
+      }
+      if (results[1].status === 'fulfilled') {
+        grades.value = results[1].value
+      }
+
+      // Tandai initialized jika minimal schoolYears berhasil.
+      // grades yang kosong/gagal bisa di-retry via refresh().
+      if (results[0].status === 'fulfilled') {
+        initialized.value = true
+      }
     } catch {
-      // Gagal fetch tidak fatal — view akan handle error sendiri
+      // Tidak perlu catch — Promise.allSettled tidak pernah reject
     } finally {
       isLoading.value = false
+    }
+  }
+
+  /**
+   * Fetch ulang hanya data grades tanpa reset seluruh store.
+   * Digunakan saat gradeOptions kosong setelah fetch() berhasil
+   * (misalnya grades gagal sementara schoolYears sukses).
+   */
+  async function fetchGrades(): Promise<void> {
+    try {
+      grades.value = await classroomsService.listGrades()
+    } catch {
+      // Tangani di caller
     }
   }
 
@@ -86,6 +111,7 @@ export const useSchoolYearStore = defineStore('schoolYear', () => {
     schoolYearOptions,
     gradeOptions,
     fetch,
+    fetchGrades,
     refresh,
     addSchoolYear,
     updateSchoolYear,
