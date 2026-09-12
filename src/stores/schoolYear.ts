@@ -101,6 +101,30 @@ export const useSchoolYearStore = defineStore('schoolYear', () => {
     schoolYears.value = schoolYears.value.filter(s => s.id !== id)
   }
 
+  // ── Grade mutations ───────────────────────────────────────────
+  // Digunakan oleh GradeListView setelah create/update/delete agar
+  // gradeOptions computed diperbarui secara reaktif di seluruh app
+  // (ClassroomFormView, StudentFormView, dll.) tanpa perlu refetch.
+
+  function addGrade(grade: Grade) {
+    grades.value.push(grade)
+    grades.value.sort((a, b) => a.level - b.level)
+  }
+
+  function updateGrade(updated: Grade) {
+    const idx = grades.value.findIndex(g => g.id === updated.id)
+    if (idx !== -1) {
+      grades.value[idx] = updated
+    } else {
+      grades.value.push(updated)
+    }
+    grades.value.sort((a, b) => a.level - b.level)
+  }
+
+  function removeGrade(id: string) {
+    grades.value = grades.value.filter(g => g.id !== id)
+  }
+
   return {
     schoolYears,
     grades,
@@ -116,5 +140,8 @@ export const useSchoolYearStore = defineStore('schoolYear', () => {
     addSchoolYear,
     updateSchoolYear,
     removeSchoolYear,
+    addGrade,
+    updateGrade,
+    removeGrade,
   }
 })
