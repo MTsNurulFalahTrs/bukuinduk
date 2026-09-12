@@ -36,23 +36,56 @@
     </PageHeader>
 
     <!-- ── Search & Filter ─────────────────────────────────────── -->
-    <BaseCard :padding="true">
-      <SearchFilter
-        v-model:search="searchQuery"
-        search-placeholder="Cari nama, NIS, NISN..."
-      >
-        <template #filters>
-          <!--
-            BUG-7 FIX: Tambahkan clearable=true pada filter status dan gender
-            agar user bisa kembali ke "Semua X" tanpa harus klik Reset.
-            Ini menggunakan prop clearable baru di BaseSelect.
-          -->
+    <BaseCard :padding="false">
+      <div class="p-4">
+
+        <!-- Baris 1: Search + tombol Export -->
+        <div class="flex items-center gap-3">
+
+          <!-- Search input -->
+          <div class="relative flex-1 min-w-0">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <input
+              v-model="searchQuery"
+              type="search"
+              placeholder="Cari nama, NIS, NISN..."
+              class="w-full pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-lg bg-white placeholder-slate-400 text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 transition-colors"
+            />
+          </div>
+
+          <!-- Export — selalu di kanan search, tidak collapse -->
+          <BaseButton
+            v-if="can(PERMISSIONS.STUDENT_EXPORT)"
+            variant="outline"
+            size="sm"
+            :loading="isExporting"
+            :disabled="studentsStore.isLoading"
+            class="shrink-0"
+            @click="handleExport"
+          >
+            <Download class="h-4 w-4" />
+            <span class="hidden sm:inline">Export</span>
+          </BaseButton>
+        </div>
+
+        <!-- Divider -->
+        <div class="border-t border-slate-100 my-3" />
+
+        <!-- Baris 2: Filter chips + Reset -->
+        <div class="flex flex-wrap items-center gap-2">
+
+          <!-- Label "Filter:" hanya di desktop -->
+          <span class="hidden sm:inline-flex items-center text-xs font-medium text-slate-400 mr-1 shrink-0">
+            <SlidersHorizontal class="h-3.5 w-3.5 mr-1.5" />
+            Filter:
+          </span>
+
           <BaseSelect
             v-model="filters.status"
             :options="statusOptions"
             placeholder="Semua Status"
             clearable
-            class="w-36 min-w-0 shrink"
+            class="w-36 shrink-0"
             @update:model-value="onFilterChange"
           />
           <BaseSelect
@@ -60,7 +93,7 @@
             :options="genderOptions"
             placeholder="Semua Gender"
             clearable
-            class="w-36 min-w-0 shrink"
+            class="w-36 shrink-0"
             @update:model-value="onFilterChange"
           />
           <BaseSelect
@@ -68,34 +101,52 @@
             :options="classroomOptions"
             placeholder="Semua Kelas"
             clearable
-            class="w-40 min-w-0 shrink"
+            class="w-40 shrink-0"
             @update:model-value="onFilterChange"
           />
-          <BaseButton
-            v-if="hasActiveFilters"
-            variant="ghost"
-            size="sm"
-            @click="resetFilters"
-          >
-            <X class="h-4 w-4" />
-            <span class="hidden xs:inline">Reset</span>
-          </BaseButton>
-        </template>
 
-        <template #actions>
-          <BaseButton
-            v-if="can(PERMISSIONS.STUDENT_EXPORT)"
-            variant="outline"
-            size="sm"
-            :loading="isExporting"
-            :disabled="studentsStore.isLoading"
-            @click="handleExport"
+          <!-- Spacer — dorong badge + tombol Reset ke kanan di desktop -->
+          <div class="flex-1 hidden sm:block" />
+
+          <!-- Badge filter aktif -->
+          <Transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="opacity-0 scale-90"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition duration-100 ease-in"
+            leave-from-class="opacity-100 scale-100"
+            leave-to-class="opacity-0 scale-90"
           >
-            <Download class="h-4 w-4" />
-            <span class="hidden sm:inline">Export</span>
-          </BaseButton>
-        </template>
-      </SearchFilter>
+            <span
+              v-if="hasActiveFilters"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-700 border border-primary-200 shrink-0"
+            >
+              <span class="h-1.5 w-1.5 rounded-full bg-primary-500" />
+              Filter aktif
+            </span>
+          </Transition>
+
+          <!-- Tombol Reset -->
+          <Transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="opacity-0 -translate-x-1"
+            enter-to-class="opacity-100 translate-x-0"
+            leave-active-class="transition duration-100 ease-in"
+            leave-from-class="opacity-100 translate-x-0"
+            leave-to-class="opacity-0 -translate-x-1"
+          >
+            <button
+              v-if="hasActiveFilters"
+              type="button"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-colors shrink-0"
+              @click="resetFilters"
+            >
+              <X class="h-3 w-3" />
+              Reset
+            </button>
+          </Transition>
+        </div>
+      </div>
     </BaseCard>
 
     <!-- ── Tabel Data Siswa ─────────────────────────────────────── -->
@@ -255,9 +306,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   UserPlus, Upload, Download, Eye, Pencil,
-  Archive, X,
+  Archive, X, Search, SlidersHorizontal,
 } from 'lucide-vue-next'
-import { PageHeader, SearchFilter, DataTable, StudentStatusBadge } from '@/components/shared'
+import { PageHeader, DataTable, StudentStatusBadge } from '@/components/shared'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import {
   BaseCard, BaseButton, BaseSelect, BaseAvatar,
