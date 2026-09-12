@@ -39,7 +39,15 @@
       />
 
       <!-- Suffix icon -->
-      <div v-if="$slots.suffix || suffixIcon" class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+      <!-- pointer-events-none hanya pada wrapper default (suffixIcon prop), -->
+      <!-- bukan saat slot diisi — agar button interaktif di slot bisa diklik. -->
+      <div
+        v-if="$slots.suffix || suffixIcon"
+        :class="[
+          'absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400',
+          !$slots.suffix && suffixIcon ? 'pointer-events-none' : '',
+        ]"
+      >
         <slot name="suffix">
           <component :is="suffixIcon" class="h-4 w-4" />
         </slot>
