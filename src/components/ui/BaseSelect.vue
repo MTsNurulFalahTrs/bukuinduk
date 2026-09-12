@@ -24,7 +24,7 @@
         ]"
         @change="$emit('update:modelValue', ($event.target as HTMLSelectElement).value)"
       >
-        <option v-if="placeholder" value="" disabled :selected="!modelValue">
+        <option v-if="placeholder" value="" :disabled="!clearable" :selected="!modelValue">
           {{ placeholder }}
         </option>
         <option
@@ -67,6 +67,10 @@ interface Props {
   placeholder?: string
   disabled?: boolean
   required?: boolean
+  // BUG-7 FIX: Prop clearable — jika true, opsi placeholder bisa dipilih
+  // kembali untuk me-reset nilai (tidak disabled). Default false untuk
+  // kompatibilitas mundur dengan form yang butuh placeholder non-selectable.
+  clearable?: boolean
   errorMessage?: string
   hint?: string
   id?: string
@@ -75,6 +79,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   required: false,
+  clearable: false,
 })
 
 defineEmits<{ 'update:modelValue': [value: string] }>()
