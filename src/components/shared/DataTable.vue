@@ -37,6 +37,9 @@
                 ]"
               >
                 <!-- Sortable column header -->
+                <!-- BUG-4 FIX: gunakan activeSortKey()/activeSortDir() agar
+                     indicator sinkron dengan state parent (controlled) atau
+                     internal (uncontrolled). -->
                 <button
                   v-if="col.sortable"
                   class="flex items-center gap-1 hover:text-slate-700 transition-colors"
@@ -44,10 +47,10 @@
                 >
                   {{ col.label }}
                   <span class="text-slate-300">
-                    <svg v-if="sortKey === col.key && sortDir === 'asc'" class="h-3 w-3" fill="currentColor" viewBox="0 0 16 16">
+                    <svg v-if="activeSortKey() === col.key && activeSortDir() === 'asc'" class="h-3 w-3" fill="currentColor" viewBox="0 0 16 16">
                       <path d="M8 4l4 8H4z"/>
                     </svg>
-                    <svg v-else-if="sortKey === col.key && sortDir === 'desc'" class="h-3 w-3" fill="currentColor" viewBox="0 0 16 16">
+                    <svg v-else-if="activeSortKey() === col.key && activeSortDir() === 'desc'" class="h-3 w-3" fill="currentColor" viewBox="0 0 16 16">
                       <path d="M8 12l-4-8h8z"/>
                     </svg>
                     <svg v-else class="h-3 w-3 opacity-40" fill="currentColor" viewBox="0 0 16 16">
@@ -120,6 +123,8 @@ interface Props {
   rowKey?: string
   clickable?: boolean
   striped?: boolean
+  // BUG-4 FIX: Terima sortKey & sortDir dari parent agar indicator sort
+  // di header sinkron dengan state filter yang aktif di store.
   sortKey?: string
   sortDir?: 'asc' | 'desc'
   emptyTitle?: string
@@ -127,7 +132,7 @@ interface Props {
   emptyType?: 'search' | 'data' | 'students' | 'default'
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   loading: false,
   skeletonRows: 5,
   clickable: false,
@@ -141,11 +146,28 @@ const emit = defineEmits<{
   sort: [key: string, dir: 'asc' | 'desc']
 }>()
 
+// BUG-10 FIX: Track kolom terakhir yang di-sort secara internal untuk
+// menentukan arah toggle. Saat kolom BERBEDA diklik, selalu mulai dari 'asc'.
+// Saat kolom SAMA diklik, toggle dari arah sebelumnya.
+const internalSortKey = ref<string>('')
 const internalSortDir = ref<'asc' | 'desc'>('asc')
 
 function onSort(key: string) {
-  const newDir = internalSortDir.value === 'asc' ? 'desc' : 'asc'
+  // BUG-10 FIX: Reset ke 'asc' saat kolom baru dipilih
+  const newDir = (internalSortKey.value === key && internalSortDir.value === 'asc')
+    ? 'desc'
+    : 'asc'
+  internalSortKey.value = key
   internalSortDir.value = newDir
   emit('sort', key, newDir)
+}
+
+// BUG-4 FIX: Gunakan prop sortKey/sortDir jika disediakan parent (controlled),
+// fallback ke state internal jika parent tidak meneruskan props ini.
+function activeSortKey(): string {
+  return props.sortKey !== undefined ? props.sortKey : internalSortKey.value
+}
+function activeSortDir(): 'asc' | 'desc' {
+  return props.sortDir !== undefined ? props.sortDir : internalSortDir.value
 }
 </script>
