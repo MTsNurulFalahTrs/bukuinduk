@@ -1,502 +1,342 @@
 <template>
-  <div class="space-y-4">
-
-    <!-- ── Page Header ─────────────────────────────────────────── -->
-    <!--
-      BUG-15 FIX: PageHeader memiliki mb-6 bawaan + space-y-4 container = dobel gap.
-      Gunakan wrapper dengan mb-0 override via class prop tidak bisa langsung,
-      tapi PageHeader sudah set mb-6 di template-nya — kita set space-y-4 (lebih
-      kecil dari space-y-5 sebelumnya) agar total gap tetap wajar.
-    -->
+  <div class="space-y-5">
     <PageHeader
-      title="Data Siswa"
-      :subtitle="headerSubtitle"
+      title="Detail Siswa"
+      show-back
+      :breadcrumbs="[{ label: 'Data Siswa', to: '/students' }, { label: student?.fullName ?? '...' }]"
     >
-      <template #actions>
+      <template v-if="student" #actions>
         <BaseButton
-          v-if="can(PERMISSIONS.STUDENT_IMPORT)"
+          v-if="can(PERMISSIONS.STUDENT_UPDATE)"
           variant="outline"
           size="sm"
-          :disabled="studentsStore.isLoading || isExporting"
-          @click="$router.push('/students/import')"
+          @click="$router.push(`/students/${student.id}/edit`)"
         >
-          <Upload class="h-4 w-4" />
-          <span class="hidden sm:inline">Import</span>
+          <Pencil class="h-4 w-4" /> Edit
         </BaseButton>
         <BaseButton
-          v-if="can(PERMISSIONS.STUDENT_CREATE)"
+          v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && student.status === 'active'"
+          variant="danger"
           size="sm"
-          :disabled="isExporting"
-          @click="$router.push('/students/create')"
+          @click="handleArchive"
         >
-          <UserPlus class="h-4 w-4" />
-          <span class="hidden sm:inline">Tambah Siswa</span>
+          <Archive class="h-4 w-4" /> Arsipkan
         </BaseButton>
       </template>
     </PageHeader>
 
-    <!-- ── Search & Filter ─────────────────────────────────────── -->
-    <BaseCard :padding="false">
-      <div class="p-4">
+    <!-- Skeleton loading -->
+    <div v-if="isLoading" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <BaseSkeleton height="h-64" class="lg:col-span-1" />
+      <BaseSkeleton height="h-64" class="lg:col-span-2" />
+    </div>
 
-        <!-- Baris 1: Search + tombol Export -->
-        <div class="flex items-center gap-3">
+    <!-- Error -->
+    <BaseAlert v-else-if="error" type="error">{{ error }}</BaseAlert>
 
-          <!-- Search input -->
-          <div class="relative flex-1 min-w-0">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-            <input
-              v-model="searchQuery"
-              type="search"
-              placeholder="Cari nama, NIS, NISN..."
-              class="w-full pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-lg bg-white placeholder-slate-400 text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 transition-colors"
+    <template v-else-if="student">
+      <!-- Row 1: Identity card + contact -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <!-- Card kiri: foto + identitas utama -->
+        <BaseCard class="flex flex-col items-center text-center gap-3 py-6">
+          <BaseAvatar :name="student.fullName" :src="student.photoUrl" size="xl" color="blue" />
+          <div>
+            <h2 class="text-lg font-bold text-slate-800">{{ student.fullName }}</h2>
+            <p v-if="student.nickname" class="text-sm text-slate-400">"{{ student.nickname }}"</p>
+          </div>
+          <StudentStatusBadge :status="student.status" dot size="md" />
+
+          <div class="w-full border-t border-slate-100 pt-4 text-left space-y-2.5 text-sm">
+            <InfoRow label="NIS" :value="student.nis" />
+            <InfoRow label="NISN" :value="student.nisn" />
+            <InfoRow label="Jenis Kelamin" :value="formatGender(student.gender)" />
+            <InfoRow label="Kelas" :value="student.currentEnrollment?.classroomName" />
+            <InfoRow label="Tahun Masuk" :value="student.currentEnrollment?.schoolYearName" />
+            <InfoRow label="Tgl Masuk" :value="formatDate(student.entryDate)" />
+          </div>
+        </BaseCard>
+
+        <!-- Tab detail kanan -->
+        <div class="lg:col-span-2 space-y-4">
+          <!-- Tab navigation -->
+          <div class="flex border-b border-slate-200 overflow-x-auto gap-0 scrollbar-thin">
+            <button
+              v-for="tab in tabs"
+              :key="tab.key"
+              :class="[
+                'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
+                activeTab === tab.key
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-700',
+              ]"
+              @click="activeTab = tab.key"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+
+          <!-- Tab: Identitas Lengkap -->
+          <div v-if="activeTab === 'identity'" class="space-y-4">
+            <BaseCard title="Data Pribadi">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
+                <InfoRow label="NIK" :value="can(PERMISSIONS.STUDENT_VIEW_SENSITIVE) ? student.nik : '••••••••••••••••'" />
+                <InfoRow label="Tempat Lahir" :value="student.birthPlace" />
+                <InfoRow label="Tanggal Lahir" :value="formatDate(student.birthDate)" />
+                <InfoRow label="Agama" :value="student.religion" />
+                <InfoRow label="Kewarganegaraan" :value="student.nationality" />
+                <InfoRow label="Status Keluarga" :value="student.familyStatus" />
+                <InfoRow label="Anak Ke-" :value="student.childOrder?.toString()" />
+                <InfoRow label="Jml Saudara" :value="student.siblingsCount?.toString()" />
+              </div>
+            </BaseCard>
+            <BaseCard title="Alamat & Kontak">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
+                <div class="sm:col-span-2">
+                  <InfoRow label="Alamat" :value="[student.address, student.rtRw].filter(Boolean).join(' RT/RW ')" />
+                </div>
+                <InfoRow label="Desa/Kelurahan" :value="student.village" />
+                <InfoRow label="Kecamatan" :value="student.district" />
+                <InfoRow label="Kab/Kota" :value="student.city" />
+                <InfoRow label="Provinsi" :value="student.province" />
+                <InfoRow label="Kode Pos" :value="student.postalCode" />
+                <InfoRow label="No. HP" :value="student.phone" />
+                <InfoRow label="Email" :value="student.email" />
+              </div>
+            </BaseCard>
+          </div>
+
+          <!-- Tab: Orang Tua -->
+          <div v-if="activeTab === 'parents'" class="space-y-4">
+            <ParentCard
+              v-for="rel in (['father', 'mother', 'guardian'] as const)"
+              :key="rel"
+              :parent="getParent(rel)"
+              :relationship="rel"
+              :show-sensitive="can(PERMISSIONS.STUDENT_VIEW_SENSITIVE)"
             />
           </div>
 
-          <!-- Export — selalu di kanan search, tidak collapse -->
-          <BaseButton
-            v-if="can(PERMISSIONS.STUDENT_EXPORT)"
-            variant="outline"
-            size="sm"
-            :loading="isExporting"
-            :disabled="studentsStore.isLoading"
-            class="shrink-0"
-            @click="handleExport"
-          >
-            <Download class="h-4 w-4" />
-            <span class="hidden sm:inline">Export</span>
-          </BaseButton>
-        </div>
+          <!-- Tab: Kesehatan -->
+          <div v-if="activeTab === 'health'">
+            <BaseCard title="Data Kesehatan">
+              <div
+                v-if="can(PERMISSIONS.STUDENT_VIEW_SENSITIVE)"
+                class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 mt-2 text-sm"
+              >
+                <InfoRow label="Gol. Darah" :value="student.health?.bloodType" />
+                <InfoRow label="Tinggi Badan" :value="student.health?.heightCm ? student.health.heightCm + ' cm' : undefined" />
+                <InfoRow label="Berat Badan" :value="student.health?.weightKg ? student.health.weightKg + ' kg' : undefined" />
+                <div class="col-span-2 sm:col-span-3">
+                  <InfoRow label="Kebutuhan Khusus" :value="student.health?.specialNeeds" />
+                </div>
+                <div class="col-span-2 sm:col-span-3">
+                  <InfoRow label="Catatan Kesehatan" :value="student.health?.healthNotes" />
+                </div>
+                <div class="col-span-2 sm:col-span-3">
+                  <InfoRow label="Alergi" :value="student.health?.allergies" />
+                </div>
+              </div>
+              <BaseAlert v-else type="info" class="mt-2">
+                Data kesehatan bersifat sensitif dan tidak dapat dilihat dengan role Anda.
+              </BaseAlert>
+            </BaseCard>
+          </div>
 
-        <!-- Divider -->
-        <div class="border-t border-slate-100 my-3" />
+          <!-- Tab: Pendidikan Sebelumnya -->
+          <div v-if="activeTab === 'education'">
+            <BaseCard title="Riwayat Pendidikan Sebelumnya">
+              <div v-if="student.educationHistory?.length" class="mt-2 space-y-3">
+                <div
+                  v-for="ed in student.educationHistory"
+                  :key="ed.id"
+                  class="flex gap-3 p-3 bg-slate-50 rounded-lg text-sm"
+                >
+                  <div class="p-2 bg-blue-100 rounded-lg shrink-0">
+                    <GraduationCap class="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 flex-1">
+                    <InfoRow label="Asal Sekolah" :value="ed.schoolName" />
+                    <InfoRow label="Jenjang" :value="ed.level" />
+                    <InfoRow label="Tahun Lulus" :value="ed.graduationYear?.toString()" />
+                    <InfoRow label="No. Ijazah" :value="ed.certificateNumber" />
+                  </div>
+                </div>
+              </div>
+              <BaseEmpty v-else title="Belum ada data riwayat pendidikan" class="py-8" />
+            </BaseCard>
+          </div>
 
-        <!-- Baris 2: Filter chips + Reset -->
-        <div class="flex flex-wrap items-center gap-2">
-
-          <!-- Label "Filter:" hanya di desktop -->
-          <span class="hidden sm:inline-flex items-center text-xs font-medium text-slate-400 mr-1 shrink-0">
-            <SlidersHorizontal class="h-3.5 w-3.5 mr-1.5" />
-            Filter:
-          </span>
-
-          <BaseSelect
-            v-model="filters.status"
-            :options="statusOptions"
-            placeholder="Semua Status"
-            clearable
-            class="w-36 shrink-0"
-            @update:model-value="onFilterChange"
-          />
-          <BaseSelect
-            v-model="filters.gender"
-            :options="genderOptions"
-            placeholder="Semua Gender"
-            clearable
-            class="w-36 shrink-0"
-            @update:model-value="onFilterChange"
-          />
-          <BaseSelect
-            v-model="filters.classroomId"
-            :options="classroomOptions"
-            placeholder="Semua Kelas"
-            clearable
-            class="w-40 shrink-0"
-            @update:model-value="onFilterChange"
-          />
-
-          <!-- Spacer — dorong badge + tombol Reset ke kanan di desktop -->
-          <div class="flex-1 hidden sm:block" />
-
-          <!-- Badge filter aktif -->
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 scale-90"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition duration-100 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-90"
-          >
-            <span
-              v-if="hasActiveFilters"
-              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary-50 text-primary-700 border border-primary-200 shrink-0"
-            >
-              <span class="h-1.5 w-1.5 rounded-full bg-primary-500" />
-              Filter aktif
-            </span>
-          </Transition>
-
-          <!-- Tombol Reset -->
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 -translate-x-1"
-            enter-to-class="opacity-100 translate-x-0"
-            leave-active-class="transition duration-100 ease-in"
-            leave-from-class="opacity-100 translate-x-0"
-            leave-to-class="opacity-0 -translate-x-1"
-          >
-            <button
-              v-if="hasActiveFilters"
-              type="button"
-              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-colors shrink-0"
-              @click="resetFilters"
-            >
-              <X class="h-3 w-3" />
-              Reset
-            </button>
-          </Transition>
+          <!-- Tab: Riwayat Kelas -->
+          <div v-if="activeTab === 'enrollment'">
+            <BaseCard title="Riwayat Kelas">
+              <div v-if="student.currentEnrollment || enrollments.length" class="mt-2 space-y-2">
+                <div
+                  v-for="enr in enrollments"
+                  :key="enr.id"
+                  class="flex items-center gap-3 p-3 rounded-lg border border-slate-100 text-sm"
+                >
+                  <div class="p-2 bg-slate-100 rounded-lg shrink-0">
+                    <School class="h-4 w-4 text-slate-500" />
+                  </div>
+                  <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-1">
+                    <InfoRow label="Kelas" :value="enr.classroomName" />
+                    <InfoRow label="Tahun Pelajaran" :value="enr.schoolYearName" />
+                    <InfoRow label="Masuk" :value="formatDate(enr.entryDate)" />
+                    <InfoRow label="Status" :value="enr.status" />
+                  </div>
+                </div>
+              </div>
+              <BaseEmpty v-else title="Belum ada riwayat kelas" class="py-8" />
+            </BaseCard>
+          </div>
         </div>
       </div>
-    </BaseCard>
+    </template>
 
-    <!-- ── Tabel Data Siswa ─────────────────────────────────────── -->
-    <BaseCard :padding="false">
-      <DataTable
-        :columns="columns"
-        :rows="studentsStore.list as Record<string, unknown>[]"
-        :loading="studentsStore.isLoading"
-        :skeleton-rows="10"
-        row-key="id"
-        :clickable="true"
-        empty-title="Tidak ada data siswa"
-        :empty-description="emptyDescription"
-        empty-type="students"
-        :sort-key="activeSortKey"
-        :sort-dir="activeSortDir"
-        @row-click="row => $router.push(`/students/${row.id}`)"
-        @sort="onSort"
-      >
-        <!-- Slot empty kontekstual: tampilkan tombol Reset saat filter aktif -->
-        <!-- BUG-17 FIX: Empty state kontekstual dengan tombol Reset Filter -->
-        <template v-if="hasActiveFilters" #empty>
-          <BaseButton variant="outline" size="sm" @click="resetFilters">
-            <X class="h-4 w-4" /> Reset Filter
-          </BaseButton>
-        </template>
-
-        <!-- No urut -->
-        <template #cell-no="{ index }">
-          <span class="text-slate-400 tabular-nums text-xs">
-            {{ (pagination.page.value - 1) * pagination.limit.value + index + 1 }}
-          </span>
-        </template>
-
-        <!-- Nama + Avatar -->
-        <template #cell-fullName="{ row }">
-          <div class="flex items-center gap-2.5 min-w-0">
-            <BaseAvatar
-              :name="String(row.fullName)"
-              :src="row.photoUrl ? String(row.photoUrl) : undefined"
-              size="sm"
-              color="blue"
-            />
-            <div class="min-w-0">
-              <p class="font-medium text-slate-800 truncate leading-snug">{{ row.fullName }}</p>
-              <p class="text-xs text-slate-400 truncate">{{ row.nis }}</p>
-            </div>
-          </div>
-        </template>
-
-        <!-- Gender — ikon + label singkat -->
-        <template #cell-gender="{ row }">
-          <span
-            :class="[
-              'inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded',
-              row.gender === 'L'
-                ? 'text-blue-700 bg-blue-50'
-                : 'text-pink-700 bg-pink-50',
-            ]"
-          >
-            {{ row.gender === 'L' ? 'L' : 'P' }}
-          </span>
-        </template>
-
-        <!-- Status -->
-        <template #cell-status="{ row }">
-          <StudentStatusBadge :status="String(row.status)" dot />
-        </template>
-
-        <!-- Aksi -->
-        <!--
-          BUG-13 FIX: Tambahkan type="button" pada semua tombol aksi untuk
-          kejelasan semantic dan mencegah unexpected form submit.
-          @click.stop mencegah event bubble ke row-click handler.
-        -->
-        <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end gap-0.5" @click.stop>
-            <button
-              type="button"
-              class="p-1.5 rounded-lg text-slate-400 hover:text-primary-600 hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-200"
-              title="Lihat detail"
-              @click="$router.push(`/students/${row.id}`)"
-            >
-              <Eye class="h-4 w-4" />
-            </button>
-            <button
-              v-if="can(PERMISSIONS.STUDENT_UPDATE)"
-              type="button"
-              class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-200"
-              title="Edit"
-              @click="$router.push(`/students/${row.id}/edit`)"
-            >
-              <Pencil class="h-4 w-4" />
-            </button>
-            <button
-              v-if="can(PERMISSIONS.STUDENT_ARCHIVE) && row.status === 'active'"
-              type="button"
-              class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200"
-              title="Arsipkan"
-              @click="handleArchive(String(row.id), String(row.fullName))"
-            >
-              <Archive class="h-4 w-4" />
-            </button>
-          </div>
-        </template>
-      </DataTable>
-
-      <!-- Pagination -->
-      <!--
-        Tampilkan pagination hanya saat ada data dan tidak sedang loading,
-        agar tidak ada "kedip" pagination saat fetch.
-      -->
-      <div
-        v-if="!studentsStore.isLoading && studentsStore.list.length > 0"
-        class="px-4 border-t border-slate-100"
-      >
-        <BasePagination
-          :current-page="pagination.page.value"
-          :total-pages="pagination.totalPages.value"
-          :total="studentsStore.total"
-          :limit="pagination.limit.value"
-          @update:current-page="onPageChange"
-        />
-      </div>
-    </BaseCard>
-
-    <!-- ── Confirm Dialog: Arsipkan Siswa ──────────────────────── -->
-    <!--
-      BUG-2 FIX: Sebelumnya terdapat dua jalur eksekusi doArchive():
-      (1) await confirm() → ok → doArchive() di handleArchive()
-      (2) @confirm event → onConfirmArchive() → doArchive()
-      Hasilnya doArchive() dipanggil DUA KALI setiap confirm.
-
-      Solusi: gunakan SATU jalur saja — hanya Promise pattern.
-      @confirm sekarang memanggil confirmDialog.onConfirm() yang me-resolve
-      Promise di handleArchive(), lalu doArchive() berjalan sekali dari sana.
-      Handler @cancel memanggil confirmDialog.onCancel() untuk resolve(false).
-
-      BUG-3 FIX: isLoading dan isOpen tidak lagi dimanipulasi langsung dari
-      doArchive(). isOpen dikelola sepenuhnya oleh useConfirm (via onConfirm/onCancel).
-      isLoading tetap diekspos untuk prop :loading di dialog.
-    -->
+    <!-- Confirm archive -->
     <BaseConfirmDialog
-      v-model="confirmDialog.isOpen.value"
+      v-model="showArchiveDialog"
       title="Arsipkan Siswa"
-      :message="`Arsipkan siswa '${archiveName}'? Siswa tidak akan dihapus, hanya dinonaktifkan.`"
+      :message="`Arsipkan '${student?.fullName}'? Siswa akan dinonaktifkan.`"
       type="warning"
       confirm-text="Ya, Arsipkan"
-      :loading="confirmDialog.isLoading.value"
-      @confirm="confirmDialog.onConfirm()"
-      @cancel="confirmDialog.onCancel()"
+      :loading="isArchiving"
+      @confirm="confirmArchive"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Pencil, Archive, GraduationCap, School } from 'lucide-vue-next'
+import { PageHeader, StudentStatusBadge } from '@/components/shared'
 import {
-  UserPlus, Upload, Download, Eye, Pencil,
-  Archive, X, Search, SlidersHorizontal,
-} from 'lucide-vue-next'
-import { PageHeader, DataTable, StudentStatusBadge } from '@/components/shared'
-import type { TableColumn } from '@/components/shared/DataTable.vue'
-import {
-  BaseCard, BaseButton, BaseSelect, BaseAvatar,
-  BasePagination, BaseConfirmDialog,
+  BaseCard, BaseButton, BaseAlert, BaseAvatar,
+  BaseSkeleton, BaseEmpty, BaseConfirmDialog,
 } from '@/components/ui'
 import { useStudentsStore } from '@/stores/students'
-import { useClassroomsStore } from '@/stores/classrooms'
-import { usePermission, usePagination, useSearch, useExport, useConfirm } from '@/composables'
+import { usePermission } from '@/composables'
 import { studentsService } from '@/services'
 import { PERMISSIONS } from '@/constants'
-import { STUDENT_STATUS_OPTIONS, GENDER_OPTIONS } from '@/constants'
+import { formatDate, formatGender } from '@/utils'
 import { toast } from 'vue-sonner'
+import type { StudentParent, StudentEnrollment } from '@/types'
 
+// ── InfoRow helper ───────────────────────────────────────────────
+const InfoRow = {
+  props: { label: String, value: String },
+  template: `
+    <div>
+      <p class="text-xs text-slate-400 mb-0.5">{{ label }}</p>
+      <p class="text-slate-700 font-medium">{{ value || '—' }}</p>
+    </div>
+  `,
+}
+
+// ── ParentCard helper ────────────────────────────────────────────
+const ParentCard = {
+  props: { parent: Object, relationship: String, showSensitive: Boolean },
+  components: { BaseCard, InfoRow },
+  methods: {
+    // BUG-21 FIX: normalizeIsAlive harus disertakan sebagai method di component object
+    // agar bisa diakses dari template string. Nilai isAlive dari spreadsheet bisa berupa
+    // boolean true/false, string "TRUE"/"FALSE", number 0/1, atau null.
+    normalizeIsAlive(val: unknown): boolean {
+      if (val === false || val === 'FALSE' || val === 'false' || val === 0) return false
+      return true
+    },
+  },
+  template: `
+    <BaseCard :title="{ father: 'Ayah', mother: 'Ibu', guardian: 'Wali' }[relationship]">
+      <div v-if="parent" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-2 text-sm">
+        <InfoRow label="Nama" :value="parent.fullName" />
+        <InfoRow v-if="showSensitive" label="NIK" :value="parent.nik" />
+        <InfoRow label="Tgl Lahir" :value="parent.birthDate" />
+        <InfoRow label="Pendidikan" :value="parent.education" />
+        <InfoRow label="Pekerjaan" :value="parent.occupation" />
+        <InfoRow label="Penghasilan" :value="parent.incomeRange" />
+        <InfoRow label="No. HP" :value="parent.phone" />
+        <InfoRow label="Status" :value="normalizeIsAlive(parent.isAlive) === false ? 'Almarhum/ah' : 'Masih hidup'" />
+      </div>
+      <p v-else class="text-sm text-slate-400 mt-2">Data tidak tersedia.</p>
+    </BaseCard>
+  `,
+}
+
+const route = useRoute()
+const router = useRouter()
 const studentsStore = useStudentsStore()
-const classroomsStore = useClassroomsStore()
 const { can } = usePermission()
-const pagination = usePagination()
-const { exportToExcel, isExporting } = useExport()
-const confirmDialog = useConfirm()
 
-// ── Filter state ──────────────────────────────────────────────
-const filters = ref({ status: '', gender: '', classroomId: '' })
+const student = computed(() => studentsStore.current)
+const isLoading = ref(true)
+const error = ref('')
+const activeTab = ref('identity')
+const enrollments = ref<StudentEnrollment[]>([])
+const showArchiveDialog = ref(false)
+const isArchiving = ref(false)
 
-const hasActiveFilters = computed(() =>
-  Object.values(filters.value).some(v => v !== '') || searchQuery.value !== ''
-)
+/**
+ * BUG-21 FIX: Normalizer untuk field isAlive yang bisa datang dari spreadsheet
+ * dalam berbagai tipe: boolean true/false, string "TRUE"/"FALSE", atau null/undefined.
+ * Hanya return false (almarhum) jika nilai secara eksplisit menunjukkan false.
+ */
+function normalizeIsAlive(val: unknown): boolean {
+  if (val === false || val === 'FALSE' || val === 'false' || val === 0) return false
+  return true // default: masih hidup jika tidak ada data
+}
 
-// ── Sort state — BUG-4 FIX: track di view agar bisa diteruskan ke DataTable prop
-const activeSortKey = ref(studentsStore.filters.sortBy ?? 'fullName')
-const activeSortDir = ref<'asc' | 'desc'>(studentsStore.filters.sortDir ?? 'asc')
-
-// ── Options ───────────────────────────────────────────────────
-const statusOptions = STUDENT_STATUS_OPTIONS
-const genderOptions = GENDER_OPTIONS
-
-const classroomOptions = computed(() =>
-  classroomsStore.classroomOptions
-)
-
-// ── Header subtitle ───────────────────────────────────────────
-// BUG-6 FIX: Saat loading, tampilkan "Memuat data..." bukan angka stale.
-const headerSubtitle = computed(() => {
-  if (studentsStore.isLoading) return 'Memuat data...'
-  const n = studentsStore.total
-  return n === 0 ? 'Tidak ada siswa ditemukan' : `${n.toLocaleString('id-ID')} siswa ditemukan`
-})
-
-// ── Empty state description ───────────────────────────────────
-// BUG-17 FIX: Pesan empty state kontekstual berdasarkan apakah filter aktif.
-const emptyDescription = computed(() => {
-  if (hasActiveFilters.value) {
-    return 'Tidak ada siswa yang cocok dengan filter atau pencarian yang aktif.'
-  }
-  return 'Belum ada siswa yang terdaftar di sistem.'
-})
-
-// ── Columns ───────────────────────────────────────────────────
-// BUG-12 FIX: Kurangi kolom yang tampil di sm agar tidak overflow.
-// Di mobile (<sm): No, Nama, Status, Aksi (4 kolom)
-// Di sm–md: tambah Gender, Kelas
-// Di md+: tambah NISN
-const columns: TableColumn[] = [
-  { key: 'no',          label: 'No',     width: 'w-10' },
-  { key: 'fullName',    label: 'Nama Siswa', sortable: true },
-  { key: 'nisn',        label: 'NISN',   class: 'hidden md:table-cell', cellClass: 'hidden md:table-cell' },
-  { key: 'gender',      label: 'JK',     align: 'center', width: 'w-14', class: 'hidden sm:table-cell', cellClass: 'hidden sm:table-cell' },
-  { key: 'classroomName', label: 'Kelas', class: 'hidden sm:table-cell', cellClass: 'hidden sm:table-cell' },
-  { key: 'status',      label: 'Status', align: 'center', width: 'w-28' },
-  { key: 'actions',     label: '',       align: 'right',  width: 'w-24', sticky: 'right' },
+const tabs = [
+  { key: 'identity', label: 'Identitas' },
+  { key: 'parents', label: 'Orang Tua' },
+  { key: 'health', label: 'Kesehatan' },
+  { key: 'education', label: 'Pendidikan' },
+  { key: 'enrollment', label: 'Riwayat Kelas' },
 ]
 
-// ── Search ─────────────────────────────────────────────────────
-const { query: searchQuery, clear: clearSearch } = useSearch((q) => {
-  pagination.reset()
-  studentsStore.setFilters({ search: q, page: 1 })
-  studentsStore.fetchList()
-})
-
-// ── Filter handlers ───────────────────────────────────────────
-function onFilterChange() {
-  pagination.reset()
-  studentsStore.setFilters({ ...filters.value, page: 1 })
-  studentsStore.fetchList()
+function getParent(rel: 'father' | 'mother' | 'guardian'): StudentParent | undefined {
+  return student.value?.parents?.find(p => p.relationship === rel)
 }
 
-function resetFilters() {
-  filters.value = { status: '', gender: '', classroomId: '' }
-  // BUG-14 (useSearch) FIX: clearSearch() tidak men-trigger debounce double-call
-  clearSearch()
-  pagination.reset()
-  studentsStore.resetFilters()
-  studentsStore.fetchList()
-  // Reset sort ke default
-  activeSortKey.value = 'fullName'
-  activeSortDir.value = 'asc'
+async function handleArchive() {
+  showArchiveDialog.value = true
 }
 
-function onPageChange(page: number) {
-  pagination.setPage(page)
-  studentsStore.setFilters({ page })
-  studentsStore.fetchList()
-}
-
-// BUG-4 & BUG-10 FIX: Simpan sort state di view dan teruskan ke DataTable via props.
-// DataTable (BUG-10 fix) sudah reset ke 'asc' saat ganti kolom — tapi view perlu
-// menyimpan state ini untuk dikirim ke store dan ditampilkan saat navigasi back.
-function onSort(key: string, dir: 'asc' | 'desc') {
-  activeSortKey.value = key
-  activeSortDir.value = dir
-  studentsStore.setFilters({ sortBy: key, sortDir: dir, page: 1 })
-  pagination.reset()
-  studentsStore.fetchList()
-}
-
-// ── Archive ───────────────────────────────────────────────────
-// BUG-17: Simpan nama siswa terpisah untuk pesan dialog (tidak perlu raw ref id).
-// BUG-2 FIX: archiveTargetId tetap sebagai ref, tapi doArchive() hanya dipanggil
-// SEKALI — dari handleArchive() setelah await confirm() resolve true.
-// Handler @confirm di template hanya memanggil confirmDialog.onConfirm() untuk
-// me-resolve Promise, bukan langsung doArchive().
-const archiveTargetId = ref('')
-const archiveName = ref('')
-
-async function handleArchive(id: string, name: string) {
-  archiveTargetId.value = id
-  archiveName.value = name
-
-  // Tunggu user konfirmasi via Promise — resolve true jika confirm, false jika cancel
-  const ok = await confirmDialog.confirm({
-    message: name,
-    type: 'warning',
-  })
-
-  // BUG-2 FIX: doArchive() hanya dipanggil di sini, TIDAK dari @confirm handler.
-  if (ok) {
-    await doArchive()
-  }
-}
-
-async function doArchive() {
-  if (!archiveTargetId.value) return
-
-  // BUG-3 FIX: Set isLoading via ref yang diekspos, jangan manipulasi isOpen langsung.
-  confirmDialog.isLoading.value = true
+async function confirmArchive() {
+  if (!student.value) return
+  isArchiving.value = true
   try {
-    await studentsService.archive(archiveTargetId.value)
-    studentsStore.removeFromList(archiveTargetId.value)
+    await studentsService.archive(student.value.id)
+    studentsStore.removeFromList(student.value.id)
     toast.success('Siswa berhasil diarsipkan.')
+    router.push('/students')
   } catch (e: unknown) {
-    toast.error(e instanceof Error ? e.message : 'Gagal mengarsipkan siswa.')
+    toast.error(e instanceof Error ? e.message : 'Gagal mengarsipkan.')
   } finally {
-    confirmDialog.isLoading.value = false
-    // BUG-3 FIX: Tutup dialog via onConfirm/onCancel sudah dilakukan — cukup reset target.
-    archiveTargetId.value = ''
-    archiveName.value = ''
+    isArchiving.value = false
+    showArchiveDialog.value = false
   }
 }
 
-// ── Export ────────────────────────────────────────────────────
-async function handleExport() {
-  try {
-    const data = await studentsService.exportData(studentsStore.filters)
-    await exportToExcel(
-      data as unknown as Record<string, unknown>[],
-      {
-        nis: 'NIS', nisn: 'NISN', fullName: 'Nama Lengkap',
-        gender: 'L/P', birthPlace: 'Tempat Lahir', birthDate: 'Tgl Lahir',
-        address: 'Alamat', phone: 'No. HP', status: 'Status',
-        classroomName: 'Kelas',
-      },
-      'data-siswa'
-    )
-  } catch (e: unknown) {
-    toast.error(e instanceof Error ? e.message : 'Gagal mengekspor data.')
-  }
-}
-
-// ── Sync ──────────────────────────────────────────────────────
-// Sync total dari store ke pagination setiap kali berubah
-watch(() => studentsStore.total, v => pagination.setTotal(v))
-
-// BUG-1 FIX: await classroomsStore.fetch() dulu SEBELUM studentsStore.fetchList()
-// agar classroomOptions sudah tersedia saat tabel render pertama kali.
-// Keduanya tidak saling bergantung secara data, tapi fetch classrooms lebih ringan
-// dan cepat — tidak ada overhead signifikan dari sequential await ini.
 onMounted(async () => {
-  await classroomsStore.fetch()
-  await studentsStore.fetchList()
-  pagination.setTotal(studentsStore.total)
+  const id = route.params.id as string
+  studentsStore.clearCurrent()
+  // BUG-18 FIX: Reset error state di awal agar error lama dari navigasi sebelumnya
+  // tidak tampil sebentar sebelum data baru dimuat.
+  error.value = ''
+  isLoading.value = true
+  try {
+    // BUG-19 FIX: fetchDetail() sekarang melempar error jika gagal (diperbaiki di store).
+    // Sehingga catch di sini akan menangkap error dan menampilkan pesan error ke user.
+    await studentsStore.fetchDetail(id)
+    if (student.value) {
+      enrollments.value = await studentsService.getEnrollments(id)
+    }
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Gagal memuat data siswa.'
+  } finally {
+    isLoading.value = false
+  }
 })
 </script>
